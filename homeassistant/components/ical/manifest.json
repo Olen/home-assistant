@@ -1,0 +1,16 @@
+{
+  "domain": "ical",
+  "name": "ical",
+  "config_flow": true,
+  "documentation": "https://www.home-assistant.io/integrations/ical",
+  "requirements": [
+    "icalendar==4.0.7"
+  ],
+  "ssdp": [],
+  "zeroconf": [],
+  "homekit": {},
+  "dependencies": [],
+  "codeowners": [
+    "@Olen"
+  ]
+}
