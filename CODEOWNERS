@@ -200,6 +200,7 @@ homeassistant/components/hydrawise/* @ptcryan
 homeassistant/components/hyperion/* @dermotduffy
 homeassistant/components/iammeter/* @lewei50
 homeassistant/components/iaqualink/* @flz
+homeassistant/components/ical/* @Olen
 homeassistant/components/icloud/* @Quentame
 homeassistant/components/ign_sismologia/* @exxamalte
 homeassistant/components/image/* @home-assistant/core

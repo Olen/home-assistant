@@ -409,6 +409,9 @@ hyperion-py==0.3.0
 # homeassistant.components.iaqualink
 iaqualink==0.3.4
 
+# homeassistant.components.ical
+icalendar==4.0.7
+
 # homeassistant.components.ping
 icmplib==1.2.2
 

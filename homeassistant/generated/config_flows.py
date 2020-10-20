@@ -89,6 +89,7 @@ FLOWS = [
     "hunterdouglas_powerview",
     "hvv_departures",
     "iaqualink",
+    "ical",
     "icloud",
     "ifttt",
     "insteon",
