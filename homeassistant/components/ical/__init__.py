@@ -128,13 +128,12 @@ class ICalEvents:
         if len(self.calendar) > 0:
             found_next_event = False
             for event in self.calendar:
-                _LOGGER.debug(
-                    "Checking if event %s has end in the future: %s",
-                    event["summary"],
-                    event["end"],
-                )
                 if event["end"] > dt.now() and not found_next_event:
-                    _LOGGER.debug("... and it has")
+                    _LOGGER.debug(
+                        "Event %s it the first event with end in the future: %s",
+                        event["summary"],
+                        event["end"],
+                    )
                     self.event = event
                     found_next_event = True
 
@@ -148,7 +147,7 @@ class ICalEvents:
             # This is mainly due to pythons handling of TZ-naive and TZ-aware timestamps, and the inconsistensies
             # in the way RRULEs are implemented in the icalendar library.
             if "RRULE" in event:
-                _LOGGER.debug("RRULE in event: %s", str(event["SUMMARY"]))
+                # _LOGGER.debug("RRULE in event: %s", str(event["SUMMARY"]))
                 rrule = event["RRULE"]
                 # Since we dont get both the start and the end in a single object, we need to generate two lists,
                 # One of all the DTSTARTs and another list of all the DTENDs
@@ -156,6 +155,14 @@ class ICalEvents:
                 end_rules = rruleset()
 
                 if "UNTIL" in rrule:
+                    try:
+                        # Just ignore events that ended a long time ago
+                        if rrule["UNTIL"][0] < from_date - timedelta(days=30):
+                            # _LOGGER.debug("Old event 1 %s - ended %s", event["SUMMARY"], str(rrule["UNTIL"][0]))
+                            continue
+                    except Exception:
+                        pass
+
                     _LOGGER.debug("UNTIL in rrule: %s", str(rrule["UNTIL"]))
                     # Ensure that UNTIL is tz-aware and in UTC
                     # (Not all icalendar implements this correctly)
@@ -199,7 +206,7 @@ class ICalEvents:
                 # ... And the same for end_rules
                 try:
                     end_rules.rrule(
-                        rrulestr(rrule.to_ical().decode("utf-8"), dtstart=dtstart)
+                        rrulestr(rrule.to_ical().decode("utf-8"), dtstart=dtend)
                     )
                 except Exception as e:
                     # If this fails, just use the start-rules
@@ -279,6 +286,26 @@ class ICalEvents:
 
             else:
                 # Let's use the same magic as for rrules to get this (as) right (as possible)
+                try:
+                    # Just ignore events that ended a long time ago
+                    if "DTEND" in event and event[
+                        "DTEND"
+                    ].dt.date() < from_date.date() - timedelta(days=30):
+                        # _LOGGER.debug("Old event 1 %s - ended %s", event["SUMMARY"], str(event["DTEND"].dt))
+                        continue
+                except Exception:
+                    # _LOGGER.debug("1: %s", str(e))
+                    pass
+                try:
+                    if "DTEND" in event and event[
+                        "DTEND"
+                    ].dt < from_date.date() - timedelta(days=30):
+                        # _LOGGER.debug("Old event 2 %s - ended %s", event["SUMMARY"], str(event["DTEND"].dt))
+                        continue
+                except Exception:
+                    # _LOGGER.debug("2: %s", str(e))
+                    pass
+
                 _LOGGER.debug("DTSTART in event: {}".format(event["DTSTART"].dt))
                 dtstart = self._ical_date_fixer(
                     event["DTSTART"].dt, dt.DEFAULT_TIME_ZONE
