@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 import logging
 
 from dateutil.rrule import rruleset, rrulestr
+from dateutil.tz import gettz
 import icalendar
-import pytz
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
@@ -90,19 +90,22 @@ class ICalEvents:
     async def async_get_events(self, hass, start_date, end_date):
         """Get list of upcoming events."""
         _LOGGER.debug("Running ICalEvents async_get_events")
+        events = []
         if len(self.calendar) > 0:
-            found_next_event = False
             for event in self.calendar:
                 _LOGGER.debug(
-                    "Checking if event %s has end in the future: %s",
+                    "Checking if event %s has start %s and end %s within in the limit: %s and %s",
                     event["summary"],
+                    event["start"],
                     event["end"],
+                    start_date,
+                    end_date,
                 )
-                if event["end"] > dt.now() and not found_next_event:
+
+                if event["start"] < end_date and event["end"] > start_date:
                     _LOGGER.debug("... and it has")
-                    self.event = event
-                    found_next_event = True
-        return self.calendar
+                    events.append(event)
+        return events
 
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
     async def update(self):
@@ -176,6 +179,7 @@ class ICalEvents:
                     )
 
                 # So hopefully we now have a proper dtstart we can use to create the start-times according to the rrule
+                # _LOGGER.debug("RRulestr %s", rrule.to_ical().decode("utf-8"))
                 try:
                     start_rules.rrule(
                         rrulestr(rrule.to_ical().decode("utf-8"), dtstart=dtstart)
@@ -190,11 +194,12 @@ class ICalEvents:
                         str(event["RRULE"]),
                     )
                     continue
+                # _LOGGER.debug("Start rules %s", str(list(start_rules)))
 
                 # ... And the same for end_rules
                 try:
                     end_rules.rrule(
-                        rrulestr(rrule.to_ical().decode("utf-8"), dtend=dtend)
+                        rrulestr(rrule.to_ical().decode("utf-8"), dtstart=dtstart)
                     )
                 except Exception as e:
                     # If this fails, just use the start-rules
@@ -252,6 +257,7 @@ class ICalEvents:
                     )
                     continue
 
+                # _LOGGER.debug("Starts: %s", str(starts))
                 # We might get RRULEs that does not fall within the limits above, lets just skip them
                 if len(starts) < 1:
                     _LOGGER.debug("Event does not happen within our limits")
@@ -312,6 +318,13 @@ class ICalEvents:
         ):
             _LOGGER.debug("This event has already ended")
             return None
+        _LOGGER.debug(
+            "Start: %s Tzinfo: %s Default: %s StartAs %s",
+            str(start),
+            str(start.tzinfo),
+            dt.DEFAULT_TIME_ZONE,
+            start.astimezone(dt.DEFAULT_TIME_ZONE),
+        )
         event_dict = {
             "summary": event.get("SUMMARY", "Unknown"),
             "start": start.astimezone(dt.DEFAULT_TIME_ZONE),
@@ -340,8 +353,16 @@ class ICalEvents:
 
         # Indate can be TZ naive
         if indate.tzinfo is None or indate.tzinfo.utcoffset(indate) is None:
-            tz = pytz.timezone(str(timezone))
-            _LOGGER.debug("TZ-Naive indate: %s Adding TZ %s", str(indate), str(tz))
-            indate = tz.localize(indate)
+            # _LOGGER.debug("TZ-Naive indate: %s Adding TZ %s", str(indate), str(gettz(str(timezone))))
+            # tz = pytz.timezone(str(timezone))
+            # indate = tz.localize(indate)
+            indate = indate.replace(tzinfo=gettz(str(timezone)))
+        # Rrules dont play well with pytz
+        # _LOGGER.debug("Tzinfo 1: %s", str(indate.tzinfo))
+        if not str(indate.tzinfo).startswith("tzfile"):
+            # _LOGGER.debug("Pytz indate: %s. replacing with tz %s", str(indate), str(gettz(str(indate.tzinfo))))
+            indate = indate.replace(tzinfo=gettz(str(indate.tzinfo)))
+        # _LOGGER.debug("Tzinfo 2: %s", str(indate.tzinfo))
+
         _LOGGER.debug("Out date: %s", str(indate))
         return indate
