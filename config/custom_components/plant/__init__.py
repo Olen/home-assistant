@@ -742,7 +742,7 @@ class PlantMaxMoisture(PlantMinMax):
 
     @property
     def device_class(self):
-        return "humidity"
+        return SensorDeviceClass.HUMIDITY
 
 
 class PlantMinMoisture(PlantMinMax):
@@ -764,7 +764,7 @@ class PlantMinMoisture(PlantMinMax):
 
     @property
     def device_class(self):
-        return "humidity"
+        return SensorDeviceClass.HUMIDITY
 
 
 class PlantMaxTemperature(PlantMinMax):
@@ -785,7 +785,7 @@ class PlantMaxTemperature(PlantMinMax):
 
     @property
     def device_class(self):
-        return "temperature"
+        return SensorDeviceClass.TEMPERATURE
 
 
 class PlantMinTemperature(PlantMinMax):
@@ -806,7 +806,7 @@ class PlantMinTemperature(PlantMinMax):
 
     @property
     def device_class(self):
-        return "temperature"
+        return SensorDeviceClass.TEMPERATURE
 
 
 class PlantMaxBrightness(PlantMinMax):
@@ -827,7 +827,7 @@ class PlantMaxBrightness(PlantMinMax):
 
     @property
     def device_class(self):
-        return "illuminance"
+        return SensorDeviceClass.ILLUMINANCE
 
 
 class PlantMinBrightness(PlantMinMax):
@@ -848,7 +848,7 @@ class PlantMinBrightness(PlantMinMax):
 
     @property
     def device_class(self):
-        return "illuminance"
+        return SensorDeviceClass.ILLUMINANCE
 
 
 class PlantMaxConductivity(PlantMinMax):
@@ -903,7 +903,7 @@ class PlantMaxHumidity(PlantMinMax):
 
     @property
     def device_class(self):
-        return "humidity"
+        return SensorDeviceClass.HUMIDITY
 
 
 class PlantMinHumidity(PlantMinMax):
@@ -924,7 +924,7 @@ class PlantMinHumidity(PlantMinMax):
 
     @property
     def device_class(self):
-        return "humidity"
+        return SensorDeviceClass.HUMIDITY
 
 
 class PlantCurrentStatus(RestoreEntity):
