@@ -282,7 +282,7 @@ class PlantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         opb_image = ""
         # opb_species = None
-        opb_name = self.plant_info[FLOW_PLANT_NAME]
+        opb_name = self.plant_info[FLOW_PLANT_SPECIES]
         _LOGGER.info("User input: %s", user_input)
 
         if DOMAIN_PLANTBOOK in self.hass.services.async_services():

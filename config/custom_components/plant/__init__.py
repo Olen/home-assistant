@@ -915,10 +915,10 @@ class PlantMaxTemperature(PlantMinMax):
         self._default_state = config.data[FLOW_PLANT_INFO][FLOW_PLANT_LIMITS].get(
             CONF_MAX_TEMPERATURE, DEFAULT_MAX_TEMPERATURE
         )
+        super().__init__(hass, config, plantdevice)
         self._default_unit_of_measurement = config.data[FLOW_PLANT_INFO][
             FLOW_PLANT_LIMITS
         ].get(CONF_SCALE_TEMPERATURE, self._hass.config.units.temperature_unit)
-        super().__init__(hass, config, plantdevice)
 
     @property
     def device_class(self):
@@ -981,7 +981,7 @@ class PlantMaxTemperature(PlantMinMax):
             # new_state = int(round((int(self.state) - 32) * 0.5556, 0))
             new_state = round(
                 convert_temperature(
-                    temperature=self.state,
+                    temperature=float(self.state),
                     from_unit=TEMP_FAHRENHEIT,
                     to_unit=TEMP_CELSIUS,
                 )
@@ -994,14 +994,11 @@ class PlantMaxTemperature(PlantMinMax):
             _LOGGER.debug("Changing from C to F measurement is %s", self.state)
             new_state = round(
                 convert_temperature(
-                    temperature=self.state,
+                    temperature=float(self.state),
                     from_unit=TEMP_CELSIUS,
                     to_unit=TEMP_FAHRENHEIT,
                 )
             )
-
-            new_state = display_temp(self._hass, float(self.state), TEMP_FAHRENHEIT)
-            # new_state = int(round((int(self.state) * 1.8) + 32, 0))
 
         _LOGGER.debug("New state = %s", new_state)
         self._hass.states.set(self.entity_id, new_state, new_attributes)
@@ -1020,12 +1017,12 @@ class PlantMinTemperature(PlantMinMax):
         self._default_state = config.data[FLOW_PLANT_INFO][FLOW_PLANT_LIMITS].get(
             CONF_MIN_TEMPERATURE, DEFAULT_MIN_TEMPERATURE
         )
-        self._default_unit_of_measurement = config.data[FLOW_PLANT_INFO][
-            FLOW_PLANT_LIMITS
-        ].get(CONF_SCALE_TEMPERATURE, self._hass.config.units.temperature_unit)
 
         self._attr_unique_id = f"{config.entry_id}-min-temperature"
         super().__init__(hass, config, plantdevice)
+        self._default_unit_of_measurement = config.data[FLOW_PLANT_INFO][
+            FLOW_PLANT_LIMITS
+        ].get(CONF_SCALE_TEMPERATURE, self._hass.config.units.temperature_unit)
 
     @property
     def device_class(self):
@@ -1083,7 +1080,7 @@ class PlantMinTemperature(PlantMinMax):
             _LOGGER.debug("Changing from F to C measurement is %s", self.state)
             new_state = round(
                 convert_temperature(
-                    temperature=self.state,
+                    temperature=float(self.state),
                     from_unit=TEMP_FAHRENHEIT,
                     to_unit=TEMP_CELSIUS,
                 )
@@ -1098,7 +1095,7 @@ class PlantMinTemperature(PlantMinMax):
             _LOGGER.debug("Changing from C to F measurement is %s", self.state)
             new_state = round(
                 convert_temperature(
-                    temperature=self.state,
+                    temperature=float(self.state),
                     from_unit=TEMP_CELSIUS,
                     to_unit=TEMP_FAHRENHEIT,
                 )
