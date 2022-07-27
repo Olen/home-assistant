@@ -176,6 +176,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     plant_entities = [
         plant,
         pspieces,
+    ]
+    plant_maxmin = [
         pmaxm,
         pminm,
         pmaxt,
@@ -188,12 +190,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         pminh,
         pmaxmm,
         pminmm,
+    ]
+    plant_sensors = [
         pcurb,
         pcurc,
         pcurm,
         pcurt,
         pcurh,
     ]
+    plant_entities.extend(plant_maxmin)
+    plant_entities.extend(plant_sensors)
     await component.async_add_entities(plant_entities)
 
     brightness_integral = IntegrationSensor(
@@ -272,16 +278,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
             meter_entity,
             new_sensor,
         )
-
-        attr = {}
-        for key in meter.attributes:
-            attr[key] = meter.attributes[key]
-        attr[ATTR_EXTERNAL_SENSOR] = new_sensor
-        _LOGGER.info(meter.attributes)
-        _LOGGER.info(attr)
-        hass.states.async_set(
-            entity_id=meter_entity, new_state=meter.state, attributes=attr
-        )
+        for entity in plant_sensors:
+            if entity.entity_id == meter_entity:
+                _LOGGER.info("Sensor: %s", entity)
+                entity.replace_external_sensor(new_sensor)
+        return
 
     if not DOMAIN in hass.services.async_services():
         hass.services.async_register(DOMAIN, SERVICE_REPLACE_SENSOR, replace_sensor)
@@ -1069,6 +1070,13 @@ class PlantCurrentStatus(RestoreSensor):
         """Modify the external sensor"""
         _LOGGER.info("Setting %s external sensor to %s", self.entity_id, new_sensor)
         self._external_sensor = new_sensor
+        async_track_state_change_event(
+            self._hass,
+            list([self.entity_id, self._external_sensor]),
+            self._state_changed_event,
+        )
+
+        self.async_write_ha_state()
 
     def self_update(self):
         return
