@@ -87,6 +87,7 @@ from .const import (
     CONF_MAX_ILLUMINANCE,
     CONF_MAX_MMOL,
     CONF_MAX_MOISTURE,
+    CONF_MAX_MOL,
     CONF_MAX_TEMPERATURE,
     CONF_MIN_BATTERY_LEVEL,
     CONF_MIN_CONDUCTIVITY,
@@ -94,6 +95,7 @@ from .const import (
     CONF_MIN_ILLUMINANCE,
     CONF_MIN_MMOL,
     CONF_MIN_MOISTURE,
+    CONF_MIN_MOL,
     CONF_MIN_TEMPERATURE,
     CONF_PLANTBOOK,
     CONF_PLANTBOOK_MAPPING,
@@ -120,6 +122,7 @@ from .const import (
     READING_ILLUMINANCE,
     READING_MMOL,
     READING_MOISTURE,
+    READING_MOL,
     READING_TEMPERATURE,
     UNIT_CONDUCTIVITY,
     UNIT_DLI,
@@ -172,8 +175,11 @@ DEFAULT_MIN_ILLUMINANCE = 0
 DEFAULT_MAX_ILLUMINANCE = 100000
 DEFAULT_MIN_HUMIDITY = 20
 DEFAULT_MAX_HUMIDITY = 60
-DEFAULT_MIN_MMOL = 0
-DEFAULT_MAX_MMOL = 100000
+DEFAULT_MIN_MMOL = 2000
+DEFAULT_MAX_MMOL = 20000
+DEFAULT_MIN_MOL = 2
+DEFAULT_MAX_MOL = 30
+
 
 # See https://www.apogeeinstruments.com/conversion-ppfd-to-lux/
 DEFAULT_LUX_TO_PPFD = 0.0185
@@ -224,8 +230,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     pminc = PlantMinConductivity(hass, entry, plant)
     pmaxh = PlantMaxHumidity(hass, entry, plant)
     pminh = PlantMinHumidity(hass, entry, plant)
-    pmaxmm = PlantMaxMmol(hass, entry, plant)
-    pminmm = PlantMinMmol(hass, entry, plant)
+    pmaxmm = PlantMaxDli(hass, entry, plant)
+    pminmm = PlantMinDli(hass, entry, plant)
 
     pcurb = PlantCurrentIlluminance(hass, entry, plant)
     pcurc = PlantCurrentConductivity(hass, entry, plant)
@@ -289,8 +295,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         min_conductivity=pminc,
         max_humidity=pmaxh,
         min_humidity=pminh,
-        max_mmol=pmaxmm,
-        min_mmol=pminmm,
+        max_mol=pmaxmm,
+        min_mol=pminmm,
     )
     # plant.add_species(species=pspieces)
 
@@ -379,6 +385,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     # if not DOMAIN in hass.services.async_services():
     hass.services.async_register(DOMAIN, SERVICE_REPLACE_SENSOR, replace_sensor)
+    # Lets add the dummy sensors automatically
+
+    for sensor in plant_sensors:
+        await hass.services.async_call(
+            domain=DOMAIN,
+            service=SERVICE_REPLACE_SENSOR,
+            service_data={
+                "meter_entity": sensor.entity_id,
+                "new_sensor": sensor.entity_id.replace("plant.", "sensor.").replace(
+                    "current", "dummy"
+                ),
+            },
+            blocking=False,
+            limit=30,
+        )
 
     return True
 
@@ -441,8 +462,8 @@ class PlantDevice(Entity):
         self.min_illuminance = None
         self.max_humidity = None
         self.min_humidity = None
-        self.max_mmol = None
-        self.min_mmol = None
+        self.max_mol = None
+        self.min_mol = None
 
         self.sensor_moisture = None
         self.sensor_temperature = None
@@ -475,6 +496,10 @@ class PlantDevice(Entity):
             "name": self.name,
             "config_entries": self._config_entries,
         }
+
+    @property
+    def illuminance_trigger(self) -> bool:
+        return self._config.options.get(FLOW_ILLUMINANCE_TRIGGER, True)
 
     @property
     def check_days(self) -> int:
@@ -523,9 +548,9 @@ class PlantDevice(Entity):
                     ATTR_MAX: self.max_humidity.entity_id,
                     ATTR_MIN: self.min_humidity.entity_id,
                 },
-                READING_MMOL: {
-                    ATTR_MAX: self.max_mmol.entity_id,
-                    ATTR_MIN: self.min_mmol.entity_id,
+                READING_MOL: {
+                    ATTR_MAX: self.max_mol.entity_id,
+                    ATTR_MIN: self.min_mol.entity_id,
                 },
             },
         }
@@ -573,8 +598,8 @@ class PlantDevice(Entity):
         min_illuminance: Entity | None,
         max_humidity: Entity | None,
         min_humidity: Entity | None,
-        max_mmol: Entity | None,
-        min_mmol: Entity | None,
+        max_mol: Entity | None,
+        min_mol: Entity | None,
     ) -> None:
         """Add the threshold entities"""
         _LOGGER.info("Adding thresholds")
@@ -588,8 +613,8 @@ class PlantDevice(Entity):
         self.min_illuminance = min_illuminance
         self.max_humidity = max_humidity
         self.min_humidity = min_humidity
-        self.max_mmol = max_mmol
-        self.min_mmol = min_mmol
+        self.max_mol = max_mol
+        self.min_mol = min_mol
 
     def add_sensors(
         self,
@@ -684,12 +709,17 @@ class PlantDevice(Entity):
         # Check the instant values for illuminance, but only high values
         # Checking Low values would create "problem" every night...
         _LOGGER.info(
-            "S1: %s S2: %s",
+            "S0: %s S1: %s S2: %s, M1: %s M2: %s",
+            self.dli.state,
             self.dli.extra_state_attributes["last_period"],
             float(self.dli.extra_state_attributes["last_period"]) / PPFD_DLI_FACTOR,
+            self.min_mol.state,
+            self.max_mol.state,
         )
-        if (
-            self._config.options.get(FLOW_ILLUMINANCE_TRIGGER, True) is True
+        if not self.illuminance_trigger:
+            _LOGGER.info("Illuinance trigger is turned off")
+        elif (
+            self.illuminance_trigger is True
             and self.sensor_illuminance is not None
             and self.sensor_illuminance.state != STATE_UNKNOWN
             and self.sensor_illuminance.state != STATE_UNAVAILABLE
@@ -707,10 +737,10 @@ class PlantDevice(Entity):
                     self.entity_id,
                     self.sensor_illuminance.state,
                 )
-            # check dli against max/min mmol
+            # check dli against max/min mol
             elif float(self.dli.extra_state_attributes["last_period"]) > 0 and float(
                 self.dli.extra_state_attributes["last_period"]
-            ) < int(self.min_mmol.state):
+            ) < int(self.min_mol.state):
                 _LOGGER.warning(
                     "Yesterdays DLI for %s to low: %s",
                     self.entity_id,
@@ -720,7 +750,7 @@ class PlantDevice(Entity):
                 state = STATE_PROBLEM
             elif float(self.dli.extra_state_attributes["last_period"]) > 0 and float(
                 self.dli.extra_state_attributes["last_period"]
-            ) > int(self.max_mmol.state):
+            ) > int(self.max_mol.state):
                 _LOGGER.warning(
                     "Yesterdays DLI for %s to high: %s",
                     self.entity_id,
@@ -1323,18 +1353,18 @@ class PlantMinIlluminance(PlantMinMax):
         return SensorDeviceClass.ILLUMINANCE
 
 
-class PlantMaxMmol(PlantMinMax):
+class PlantMaxDli(PlantMinMax):
     """Entity class for max illuminance threshold"""
 
     def __init__(
         self, hass: HomeAssistant, config: ConfigEntry, plantdevice: Entity
     ) -> None:
         """Initialize the Plant component."""
-        self._attr_name = f"{config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]} Max Mmol"
+        self._attr_name = f"{config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]} Max DLI"
         self._default_state = config.data[FLOW_PLANT_INFO][FLOW_PLANT_LIMITS].get(
-            CONF_MAX_MMOL, STATE_UNKNOWN
+            CONF_MAX_MOL, STATE_UNKNOWN
         )
-        self._attr_unique_id = f"{config.entry_id}-max-mmol"
+        self._attr_unique_id = f"{config.entry_id}-max-dli"
         self._attr_unit_of_measurement = UNIT_MICRO_PPFD
         super().__init__(hass, config, plantdevice)
 
@@ -1343,18 +1373,18 @@ class PlantMaxMmol(PlantMinMax):
         return SensorDeviceClass.ILLUMINANCE
 
 
-class PlantMinMmol(PlantMinMax):
+class PlantMinDli(PlantMinMax):
     """Entity class for min illuminance threshold"""
 
     def __init__(
         self, hass: HomeAssistant, config: ConfigEntry, plantdevice: Entity
     ) -> None:
         """Initialize the Plant component."""
-        self._attr_name = f"{config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]} Min Mmol"
+        self._attr_name = f"{config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]} Min DLI"
         self._default_state = config.data[FLOW_PLANT_INFO][FLOW_PLANT_LIMITS].get(
-            CONF_MIN_MMOL, STATE_UNKNOWN
+            CONF_MIN_MOL, STATE_UNKNOWN
         )
-        self._attr_unique_id = f"{config.entry_id}-min-mmol"
+        self._attr_unique_id = f"{config.entry_id}-min-dli"
         self._attr_unit_of_measurement = UNIT_MICRO_PPFD
 
         super().__init__(hass, config, plantdevice)
@@ -1372,7 +1402,7 @@ class PlantMaxConductivity(PlantMinMax):
     ) -> None:
         """Initialize the Plant component."""
         self._attr_name = (
-            f"{config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]} Max Condictivity"
+            f"{config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]} Max Condctivity"
         )
         self._default_state = config.data[FLOW_PLANT_INFO][FLOW_PLANT_LIMITS].get(
             CONF_MAX_CONDUCTIVITY, STATE_UNKNOWN
@@ -1390,7 +1420,7 @@ class PlantMinConductivity(PlantMinMax):
     ) -> None:
         """Initialize the Plant component."""
         self._attr_name = (
-            f"{config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]} Min Condictivity"
+            f"{config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]} Min Conductivity"
         )
         self._default_state = config.data[FLOW_PLANT_INFO][FLOW_PLANT_LIMITS].get(
             CONF_MIN_CONDUCTIVITY, STATE_UNKNOWN
@@ -1612,7 +1642,7 @@ class PlantCurrentIlluminance(PlantCurrentStatus):
             f"{config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]} Current Illuminance"
         )
         self._attr_unique_id = f"{config.entry_id}-current-illuminance"
-        self._attr_icon = "mdi:illuminance-6"
+        self._attr_icon = "mdi:brightness-6"
         self._external_sensor = config.data[FLOW_PLANT_INFO].get(
             FLOW_SENSOR_ILLUMINANCE
         )
@@ -1641,7 +1671,7 @@ class PlantCurrentIlluminance(PlantCurrentStatus):
 
 
 class PlantCurrentConductivity(PlantCurrentStatus):
-    """Entity class for the current condictivity meter"""
+    """Entity class for the current conductivity meter"""
 
     def __init__(
         self, hass: HomeAssistant, config: ConfigEntry, plantdevice: Entity
@@ -1764,22 +1794,22 @@ class PlantCurrentPpfd(PlantCurrentStatus):
     def device_class(self):
         return SensorDeviceClass.ILLUMINANCE
 
-    @property
-    def extra_state_attributes(self) -> dict:
-        if self._external_sensor:
-            attributes = {
-                "external_sensor": self._external_sensor,
-                "history_max": self._history.max,
-                "history_min": self._history.min,
-            }
-            if (
-                self.state
-                and self.state != STATE_UNKNOWN
-                and self.state != STATE_UNAVAILABLE
-            ):
-                attributes["ppfd_mmol"] = round(float(self.state) / PPFD_DLI_FACTOR)
-
-            return attributes
+    # @property
+    # def extra_state_attributes(self) -> dict:
+    #     if self._external_sensor:
+    #         attributes = {
+    #             "external_sensor": self._external_sensor,
+    #             "history_max": self._history.max,
+    #             "history_min": self._history.min,
+    #         }
+    #         if (
+    #             self.state
+    #             and self.state != STATE_UNKNOWN
+    #             and self.state != STATE_UNAVAILABLE
+    #         ):
+    #             attributes["ppfd_mmol"] = round(float(self.state) / PPFD_DLI_FACTOR, 2)
+    #
+    #         return attributes
 
     def ppfd(self, value) -> float:
         """
@@ -1790,7 +1820,7 @@ class PlantCurrentPpfd(PlantCurrentStatus):
         μmol/m²/s
         """
         if value is not None and value != STATE_UNAVAILABLE and value != STATE_UNKNOWN:
-            value = float(value) * DEFAULT_LUX_TO_PPFD / 100000
+            value = float(value) * DEFAULT_LUX_TO_PPFD / 1000000
             # if self._micro:
             #     value = value / 1000000
 

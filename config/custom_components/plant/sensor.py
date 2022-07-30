@@ -157,7 +157,7 @@ class PlantDummyIlluminance(PlantDummyStatus):
         if datetime.now().hour < 5:
             self._attr_native_value = random.randint(1, 10) * 100
         elif datetime.now().hour < 15:
-            self._attr_native_value = random.randint(20, 75) * 1000
+            self._attr_native_value = random.randint(20, 50) * 1000
         else:
             self._attr_native_value = random.randint(1, 10) * 100
 
@@ -192,7 +192,7 @@ class PlantDummyMoisture(PlantDummyStatus):
         super().__init__(hass, config)
 
     async def async_update(self):
-        self._attr_native_value = random.randint(0, 80)
+        self._attr_native_value = random.randint(10, 70)
 
     @property
     def device_class(self):
@@ -227,7 +227,7 @@ class PlantDummyHumidity(PlantDummyStatus):
         super().__init__(hass, config)
 
     async def async_update(self):
-        r = random.randint(20, 90)
+        r = random.randint(25, 90)
         # _LOGGER.info("Getting curret temperature: %s", r)
         self._attr_native_value = r
 
