@@ -157,14 +157,15 @@ customElements.whenDefined("card-tools").then(() => {
             // https://www.ledtonic.com/blogs/guides/dli-daily-light-integral-chart-understand-your-plants-ppfd-photoperiod-requirements
             const DLI_FACTOR = 0.0036;
             limits["max_dli"] =
-              this._hass.states[this.stateObj.attributes.thresholds["mmol"].max]
-                .state * DLI_FACTOR;
+              this._hass.states[
+                this.stateObj.attributes.thresholds["mol"].max
+              ].state;
             limits["min_dli"] =
-              this._hass.states[this.stateObj.attributes.thresholds["mmol"].min]
-                .state * DLI_FACTOR;
+              this._hass.states[
+                this.stateObj.attributes.thresholds["mol"].min
+              ].state;
             curr["dli"] =
-              this._hass.states[this.stateObj.attributes.meters["dli"]].state *
-              DLI_FACTOR; // To be replaced when sensor is renamed
+              this._hass.states[this.stateObj.attributes.meters["dli"]].state;
             icons["dli"] =
               this._hass.states[
                 this.stateObj.attributes.meters["dli"]
@@ -238,7 +239,7 @@ customElements.whenDefined("card-tools").then(() => {
               unit
             : val
         }" @click="${() =>
-          cardTools.moreInfo(this.stateObj.attributes[attr + "_sensor"])}">
+          cardTools.moreInfo(this.stateObj.attributes.meters[attr])}">
           <ha-icon .icon="${icon}"></ha-icon>
           <div class="meter red">
             <span class="${
