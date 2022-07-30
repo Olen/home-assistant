@@ -482,6 +482,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         data_schema[
             vol.Optional(ATTR_ENTITY_PICTURE, default=self.plant._attr_entity_picture)
         ] = str
+        data_schema[FLOW_ILLUMINANCE_TRIGGER] = selector({"boolean": {}})
         data_schema[vol.Optional(CONF_CHECK_DAYS, default=self.plant.check_days)] = int
 
         return self.async_show_form(step_id="init", data_schema=vol.Schema(data_schema))

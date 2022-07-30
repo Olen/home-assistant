@@ -26,12 +26,10 @@ READING_HUMIDITY = "humidity"
 READING_MMOL = "mmol"
 READING_DLI = "dli"
 
-UNIT_PPFD = "μmol/s⋅m²"
-UNIT_MICRO_PPFD = "mol/s⋅m²"
-UNIT_DLI = "μmol/d⋅m²"
-UNIT_MICRO_DLI = "mol/d⋅m²"
-
-
+UNIT_PPFD = "mol/s⋅m²"
+UNIT_MICRO_PPFD = "μmol/s⋅m²"
+UNIT_DLI = "mol/d⋅m²"
+UNIT_MICRO_DLI = "μmol/d⋅m²"
 UNIT_CONDUCTIVITY = "μS/cm"
 
 FLOW_PLANT_INFO = "plant_info"
@@ -46,10 +44,15 @@ FLOW_SENSOR_CONDUCTIVITY = "conductivity_sensor"
 FLOW_SENSOR_ILLUMINANCE = "illuminance_sensor"
 FLOW_SENSOR_HUMIDITY = "humidity_sensor"
 
+FLOW_ILLUMINANCE_TRIGGER = "illuminance_trigger"
+
 OPB_SEARCH = "search"
 OPB_SEARCH_RESULT = "search_result"
 OPB_PID = "pid"
 OPB_DISPLAY_PID = "display_pid"
+
+# PPFD to DLI: /1000000 * 3600 to get from microseconds to hours
+PPFD_DLI_FACTOR = 0.0036
 
 CONF_MIN_BATTERY_LEVEL = f"min_{READING_BATTERY}"
 CONF_MIN_TEMPERATURE = f"min_{READING_TEMPERATURE}"

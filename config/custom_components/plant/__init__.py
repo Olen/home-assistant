@@ -99,6 +99,7 @@ from .const import (
     CONF_PLANTBOOK_MAPPING,
     CONF_SPECIES,
     DOMAIN,
+    FLOW_ILLUMINANCE_TRIGGER,
     FLOW_PLANT_IMAGE,
     FLOW_PLANT_INFO,
     FLOW_PLANT_LIMITS,
@@ -111,6 +112,7 @@ from .const import (
     FLOW_SENSOR_TEMPERATURE,
     OPB_DISPLAY_PID,
     OPB_PID,
+    PPFD_DLI_FACTOR,
     READING_BATTERY,
     READING_CONDUCTIVITY,
     READING_DLI,
@@ -265,32 +267,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await component.async_add_entities(plant_entities)
     hass.data[DOMAIN][entry.entry_id][ATTR_METERS] = plant_maxmin
     hass.data[DOMAIN][entry.entry_id][ATTR_SENSORS] = plant_sensors
-    # hass.data[DOMAIN][entry.entry_id]["species"] = pspieces
-
-    #    illuminance_integral = IntegrationSensor(
-    #        integration_method=METHOD_TRAPEZOIDAL,
-    #        name=pcurb.name + " Integral",
-    #        round_digits=2,
-    #        source_entity=pcurb.entity_id,
-    #        unit_time=None,
-    #        unique_id=f"{entry.entry_id}-light-integral",
-    #        unit_prefix=None,
-    #    )
-    #
-    #    illuminance_dli = UtilityMeterSensor(
-    #        name=pcurb.name + " DLI",
-    #        source_entity=illuminance_integral.entity_id,
-    #        meter_type=DAILY,
-    #        unique_id=f"{entry.entry_id}-daily-light-integral",
-    #        cron_pattern=None,
-    #        delta_values=None,
-    #        meter_offset=timedelta(seconds=0),
-    #        net_consumption=None,
-    #        parent_meter=entry.entry_id,
-    #        tariff=None,
-    #        tariff_entity=None,
-    #    )
-
     device_id = plant.device_id
 
     await _plant_add_to_device_registry(hass, plant_entities, device_id)
@@ -320,7 +296,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
     integral_entities = []
     # Must be run after the sensors are added to the plant
-    pcurppfd = PlantCurrentPpfd(hass, entry, plant, micro=False)
+    pcurppfd = PlantCurrentPpfd(hass, entry, plant)
     await component.async_add_entities([pcurppfd])
     integral_entities.append(pcurppfd)
 
@@ -332,19 +308,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     await component.async_add_entities([pdli])
     integral_entities.append(pdli)
 
-    pcurppfdm = PlantCurrentPpfd(hass, entry, plant, micro=True)
-    await component.async_add_entities([pcurppfdm])
-    integral_entities.append(pcurppfdm)
+    # pcurppfdm = PlantCurrentPpfd(hass, entry, plant, micro=True)
+    # await component.async_add_entities([pcurppfdm])
+    # integral_entities.append(pcurppfdm)
 
-    pintegralm = PlantTotalLightIntegral(hass, entry, pcurppfdm)
-    await component.async_add_entities([pintegralm])
-    integral_entities.append(pintegralm)
+    # pintegralm = PlantTotalLightIntegral(hass, entry, pcurppfdm)
+    # await component.async_add_entities([pintegralm])
+    # integral_entities.append(pintegralm)
 
-    pdlim = PlantDailyLightIntegral(hass, entry, pintegralm)
-    await component.async_add_entities([pdlim])
-    integral_entities.append(pdlim)
+    # pdlim = PlantDailyLightIntegral(hass, entry, pintegralm)
+    # await component.async_add_entities([pdlim])
+    # integral_entities.append(pdlim)
 
-    plant.add_dli(dli=pdlim, micro_dli=pdli)
+    plant.add_dli(dli=pdli)
 
     hass.data[DATA_UTILITY][entry.entry_id][DATA_TARIFF_SENSORS].append(pdli)
     await _plant_add_to_device_registry(hass, integral_entities, device_id)
@@ -429,22 +405,22 @@ class PlantDevice(Entity):
         self._attr_name = config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]
         self._config_entries = []
 
-        self._attr_entity_picture = self._config.options.get(ATTR_ENTITY_PICTURE)
-        if not self._attr_entity_picture:
-            self._attr_entity_picture = self._config.data[FLOW_PLANT_INFO][
-                FLOW_PLANT_LIMITS
-            ].get(ATTR_ENTITY_PICTURE)
-
-        self.species = self._config.options.get(FLOW_PLANT_SPECIES)
-        if not self.species:
-            self.species = self._config.data[FLOW_PLANT_INFO][FLOW_PLANT_SPECIES]
-
-        self.display_species = self._config.options.get(OPB_DISPLAY_PID)
-        if not self.display_species:
-            self.display_species = self._config.data[FLOW_PLANT_INFO][
-                FLOW_PLANT_LIMITS
-            ][OPB_DISPLAY_PID]
-
+        # Get entity_picture from options or from initial config
+        self._attr_entity_picture = self._config.options.get(
+            ATTR_ENTITY_PICTURE,
+            self._config.data[FLOW_PLANT_INFO][FLOW_PLANT_LIMITS].get(
+                ATTR_ENTITY_PICTURE
+            ),
+        )
+        # Get species from options or from initial config
+        self.species = self._config.options.get(
+            FLOW_PLANT_SPECIES, self._config.data[FLOW_PLANT_INFO][FLOW_PLANT_SPECIES]
+        )
+        # Get display_species from options or from initial config
+        self.display_species = self._config.options.get(
+            OPB_DISPLAY_PID,
+            self._config.data[FLOW_PLANT_INFO][FLOW_PLANT_LIMITS][OPB_DISPLAY_PID],
+        )
         self._attr_unique_id = self._config.entry_id
 
         self.entity_id = async_generate_entity_id(
@@ -499,15 +475,6 @@ class PlantDevice(Entity):
             "name": self.name,
             "config_entries": self._config_entries,
         }
-
-    # @property
-    # def display_species(self) -> str:
-    #     """The visible name of the plant species"""
-    #     if self.species is None:
-    #         return STATE_UNKNOWN
-    #     if not "display_species" in self.species.extra_state_attributes:
-    #         return STATE_UNKNOWN
-    #     return self.species.extra_state_attributes["display_species"]
 
     @property
     def check_days(self) -> int:
@@ -579,7 +546,7 @@ class PlantDevice(Entity):
         if self.sensor_humidity is not None:
             attributes[ATTR_METERS][READING_HUMIDITY] = self.sensor_humidity.entity_id
         if self.dli is not None:
-            attributes[ATTR_METERS][READING_DLI] = self.micro_dli.entity_id
+            attributes[ATTR_METERS][READING_DLI] = self.dli.entity_id
 
         return attributes
 
@@ -642,11 +609,9 @@ class PlantDevice(Entity):
     def add_dli(
         self,
         dli: Entity | None,
-        micro_dli: Entity | None,
     ) -> None:
         """Add the DLI-utility sensors"""
         self.dli = dli
-        self.micro_dli = micro_dli
 
     def update(self) -> None:
         """Run on every update of the entities"""
@@ -718,8 +683,14 @@ class PlantDevice(Entity):
 
         # Check the instant values for illuminance, but only high values
         # Checking Low values would create "problem" every night...
+        _LOGGER.info(
+            "S1: %s S2: %s",
+            self.dli.extra_state_attributes["last_period"],
+            float(self.dli.extra_state_attributes["last_period"]) / PPFD_DLI_FACTOR,
+        )
         if (
-            self.sensor_illuminance is not None
+            self._config.options.get(FLOW_ILLUMINANCE_TRIGGER, True) is True
+            and self.sensor_illuminance is not None
             and self.sensor_illuminance.state != STATE_UNKNOWN
             and self.sensor_illuminance.state != STATE_UNAVAILABLE
             and self.sensor_illuminance.state is not None
@@ -731,15 +702,30 @@ class PlantDevice(Entity):
             if int(self.sensor_illuminance.state) > int(self.max_illuminance.state):
                 self.illuminance_status = STATE_HIGH
                 state = STATE_PROBLEM
+                _LOGGER.warning(
+                    "Current illuminance for %s to high: %s",
+                    self.entity_id,
+                    self.sensor_illuminance.state,
+                )
             # check dli against max/min mmol
             elif float(self.dli.extra_state_attributes["last_period"]) > 0 and float(
                 self.dli.extra_state_attributes["last_period"]
             ) < int(self.min_mmol.state):
+                _LOGGER.warning(
+                    "Yesterdays DLI for %s to low: %s",
+                    self.entity_id,
+                    self.dli.extra_state_attributes["last_period"],
+                )
                 self.illuminance_status = STATE_LOW
                 state = STATE_PROBLEM
             elif float(self.dli.extra_state_attributes["last_period"]) > 0 and float(
                 self.dli.extra_state_attributes["last_period"]
             ) > int(self.max_mmol.state):
+                _LOGGER.warning(
+                    "Yesterdays DLI for %s to high: %s",
+                    self.entity_id,
+                    self.dli.extra_state_attributes["last_period"],
+                )
                 self.illuminance_status = STATE_HIGH
                 state = STATE_PROBLEM
             else:
@@ -1349,7 +1335,7 @@ class PlantMaxMmol(PlantMinMax):
             CONF_MAX_MMOL, STATE_UNKNOWN
         )
         self._attr_unique_id = f"{config.entry_id}-max-mmol"
-        self._attr_unit_of_measurement = UNIT_PPFD
+        self._attr_unit_of_measurement = UNIT_MICRO_PPFD
         super().__init__(hass, config, plantdevice)
 
     @property
@@ -1369,7 +1355,7 @@ class PlantMinMmol(PlantMinMax):
             CONF_MIN_MMOL, STATE_UNKNOWN
         )
         self._attr_unique_id = f"{config.entry_id}-min-mmol"
-        self._attr_unit_of_measurement = UNIT_PPFD
+        self._attr_unit_of_measurement = UNIT_MICRO_PPFD
 
         super().__init__(hass, config, plantdevice)
 
@@ -1756,25 +1742,19 @@ class PlantCurrentPpfd(PlantCurrentStatus):
     """Entity reporting current PPFD calculated from LX"""
 
     def __init__(
-        self, hass: HomeAssistant, config: ConfigEntry, plantdevice: Entity, micro=False
+        self, hass: HomeAssistant, config: ConfigEntry, plantdevice: Entity
     ) -> None:
         #     If we work with micro-units, the measurement is mol
         #     If we work with whole units, the measurement is i mmol
-        if micro:
-            self._attr_name = (
-                f"{config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]} Current PPFD"
-            )
-            self._attr_unique_id = f"{config.entry_id}-current-ppfd-micro"
-            self._attr_unit_of_measurement = UNIT_MICRO_PPFD
-        else:
-            self._attr_name = (
-                f"{config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]} Current PPFD (μ)"
-            )
-            self._attr_unique_id = f"{config.entry_id}-current-ppfd"
-            self._attr_unit_of_measurement = UNIT_PPFD
+        self._attr_name = (
+            f"{config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]} Current PPFD (mol)"
+        )
+
+        self._attr_unique_id = f"{config.entry_id}-current-ppfd"
+        self._attr_unit_of_measurement = UNIT_PPFD
+        self._attr_native_unit_of_measurement = UNIT_PPFD
 
         self._plant = plantdevice
-        self._micro = micro
 
         self._external_sensor = self._plant.sensor_illuminance.entity_id
         self._attr_icon = "mdi:white-balance-sunny"
@@ -1784,16 +1764,22 @@ class PlantCurrentPpfd(PlantCurrentStatus):
     def device_class(self):
         return SensorDeviceClass.ILLUMINANCE
 
-    # @property
-    # def unit_of_measurement(self) -> str | None:
-    #     """
-    #     If we work with micro-units, the measurement is mol
-    #     If we work with whole units, the measurement is i mmol
-    #     """
-    #     if self._micro:
-    #         return UNIT_MICRO_PPFD
-    #     else:
-    #         return UNIT_PPFD
+    @property
+    def extra_state_attributes(self) -> dict:
+        if self._external_sensor:
+            attributes = {
+                "external_sensor": self._external_sensor,
+                "history_max": self._history.max,
+                "history_min": self._history.min,
+            }
+            if (
+                self.state
+                and self.state != STATE_UNKNOWN
+                and self.state != STATE_UNAVAILABLE
+            ):
+                attributes["ppfd_mmol"] = round(float(self.state) / PPFD_DLI_FACTOR)
+
+            return attributes
 
     def ppfd(self, value) -> float:
         """
@@ -1804,9 +1790,9 @@ class PlantCurrentPpfd(PlantCurrentStatus):
         μmol/m²/s
         """
         if value is not None and value != STATE_UNAVAILABLE and value != STATE_UNKNOWN:
-            value = float(value) * DEFAULT_LUX_TO_PPFD
-            if self._micro:
-                value = value / 1000000
+            value = float(value) * DEFAULT_LUX_TO_PPFD / 100000
+            # if self._micro:
+            #     value = value / 1000000
 
         return value
 
@@ -1846,15 +1832,12 @@ class PlantTotalLightIntegral(IntegrationSensor):
     ) -> None:
         self._method = METHOD_TRAPEZOIDAL
         self._attr_name = (
-            illuminance_ppfd_sensor.name.replace("Current ", "") + " Integral"
+            f"{config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]} Total PPFD (mol) Integral"
         )
-        self._attr_unique_id = f"{config.entry_id}-light-integral"
-        self._unit_time_str = TIME_HOURS
+
+        self._attr_unique_id = f"{config.entry_id}-ppfd-integral"
         self._unit_of_measurement = UNIT_PPFD
-        if illuminance_ppfd_sensor._micro:
-            self._unit_of_measurement = UNIT_MICRO_PPFD
-            self._attr_unique_id = self._attr_unique_id + "-micro"
-            self._unit_time_str = TIME_SECONDS
+        self._unit_time_str = TIME_SECONDS
         self._round_digits = 2
         self._sensor_source_id = illuminance_ppfd_sensor.entity_id
         self._unit_time = UNIT_TIME[self._unit_time_str]
@@ -1873,14 +1856,14 @@ class PlantDailyLightIntegral(UtilityMeterSensor):
         config: ConfigEntry,
         illuminance_integration_sensor: Entity,
     ):
-        self._name = "Daily μmol integral"
-        self._attr_unique_id = f"{config.entry_id}-daily-light-integral"
-        self._unit_of_measurement = UNIT_DLI
+        self._name = (
+            f"{config.data[FLOW_PLANT_INFO][FLOW_PLANT_NAME]} Daily Light Integral"
+        )
 
-        if illuminance_integration_sensor._attr_unique_id.endswith("-micro"):
-            self._name = "Daily Light Integral"
-            self._attr_unique_id = self._attr_unique_id + "-micro"
-            self._unit_of_measurement = UNIT_MICRO_DLI
+        self._attr_unique_id = f"{config.entry_id}-ppfd-integral"
+
+        self._attr_unique_id = self._attr_unique_id + "-micro"
+        self._unit_of_measurement = UNIT_DLI
         self._sensor_source_id = illuminance_integration_sensor.entity_id
         self._period = DAILY
         self._meter_offset = timedelta(seconds=0)

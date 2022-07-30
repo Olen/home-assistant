@@ -1,4 +1,15 @@
 customElements.whenDefined("card-tools").then(() => {
+  /*
+  /
+  / Possible options for bars:
+  / - moisture
+  / - illuminance
+  / - conductivity
+  / - temperature
+  / - humidity
+  / - dli
+  /
+  */
   var cardTools = customElements.get("card-tools");
   class FlowerCard extends cardTools.LitElement {
     async setConfig(config) {
@@ -127,17 +138,9 @@ customElements.whenDefined("card-tools").then(() => {
       }
       var icons = {};
       var uom = {};
-      // const icons = {
-      //  temperature: "mdi:thermometer",
-      //  humidity: "mdi:water-percent",
-      //  moisture: "mdi:water-percent",
-      //  illuminance: "mdi:white-balance-sunny",
-      //  conductivity: "mdi:leaf",
-      // };
       const species = this.stateObj.attributes.species;
       let limits = {};
       let curr = {};
-      // console.log(this.config.show_bars);
       const monitored = this.config.show_bars;
       let displayed = [];
       // const monitored = ["moisture", "illuminance", "conductivity", "temperature", "humidity"]

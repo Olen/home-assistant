@@ -67,7 +67,8 @@
           "conductivity_sensor": "Conductivity sensor",
           "illuminance_sensor": "Light sensor",
           "humidity_sensor": "Humidity (environment) sensor",
-          "entity_picture": "Image URL. Will be automatically updated if species is found in OpnePlantbook."
+          "entity_picture": "Image URL. Will be automatically updated if species is found in OpnePlantbook",
+          "illuminance_trigger": "Trigger warning when Daily Light Integral is too high/low. Ignore illuminance as problem trigger if turned off"
         }
       }
     }

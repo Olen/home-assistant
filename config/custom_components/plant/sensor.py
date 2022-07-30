@@ -157,7 +157,7 @@ class PlantDummyIlluminance(PlantDummyStatus):
         if datetime.now().hour < 5:
             self._attr_native_value = random.randint(1, 10) * 100
         elif datetime.now().hour < 15:
-            self._attr_native_value = random.randint(80, 100) * 1000
+            self._attr_native_value = random.randint(20, 75) * 1000
         else:
             self._attr_native_value = random.randint(1, 10) * 100
 
