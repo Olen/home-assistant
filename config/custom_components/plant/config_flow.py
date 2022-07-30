@@ -10,15 +10,15 @@ import voluptuous as vol
 from config.custom_components import plant
 from config.custom_components.plant import (
     DEFAULT_CHECK_DAYS,
-    DEFAULT_MAX_BRIGHTNESS,
     DEFAULT_MAX_CONDUCTIVITY,
     DEFAULT_MAX_HUMIDITY,
+    DEFAULT_MAX_ILLUMINANCE,
     DEFAULT_MAX_MMOL,
     DEFAULT_MAX_MOISTURE,
     DEFAULT_MAX_TEMPERATURE,
-    DEFAULT_MIN_BRIGHTNESS,
     DEFAULT_MIN_CONDUCTIVITY,
     DEFAULT_MIN_HUMIDITY,
+    DEFAULT_MIN_ILLUMINANCE,
     DEFAULT_MIN_MMOL,
     DEFAULT_MIN_MOISTURE,
     DEFAULT_MIN_TEMPERATURE,
@@ -48,16 +48,16 @@ from homeassistant.helpers.temperature import display_temp
 from .const import (
     CONF_CHECK_DAYS,
     CONF_IMAGE,
-    CONF_MAX_BRIGHTNESS,
     CONF_MAX_CONDUCTIVITY,
     CONF_MAX_HUMIDITY,
+    CONF_MAX_ILLUMINANCE,
     CONF_MAX_MMOL,
     CONF_MAX_MOISTURE,
     CONF_MAX_TEMPERATURE,
     CONF_MIN_BATTERY_LEVEL,
-    CONF_MIN_BRIGHTNESS,
     CONF_MIN_CONDUCTIVITY,
     CONF_MIN_HUMIDITY,
+    CONF_MIN_ILLUMINANCE,
     CONF_MIN_MMOL,
     CONF_MIN_MOISTURE,
     CONF_MIN_TEMPERATURE,
@@ -70,9 +70,9 @@ from .const import (
     FLOW_PLANT_LIMITS,
     FLOW_PLANT_NAME,
     FLOW_PLANT_SPECIES,
-    FLOW_SENSOR_BRIGHTNESS,
     FLOW_SENSOR_CONDUCTIVITY,
     FLOW_SENSOR_HUMIDITY,
+    FLOW_SENSOR_ILLUMINANCE,
     FLOW_SENSOR_MOISTURE,
     FLOW_SENSOR_TEMPERATURE,
     OPB_DISPLAY_PID,
@@ -80,8 +80,8 @@ from .const import (
     OPB_SEARCH,
     OPB_SEARCH_RESULT,
     READING_BATTERY,
-    READING_BRIGHTNESS,
     READING_CONDUCTIVITY,
+    READING_ILLUMINANCE,
     READING_MOISTURE,
     READING_TEMPERATURE,
 )
@@ -163,7 +163,7 @@ class PlantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema[FLOW_SENSOR_CONDUCTIVITY] = selector(
             {ATTR_ENTITY: {ATTR_DOMAIN: DOMAIN_SENSOR}}
         )
-        data_schema[FLOW_SENSOR_BRIGHTNESS] = selector(
+        data_schema[FLOW_SENSOR_ILLUMINANCE] = selector(
             {
                 ATTR_ENTITY: {
                     ATTR_DEVICE_CLASS: SensorDeviceClass.ILLUMINANCE,
@@ -277,8 +277,8 @@ class PlantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema = {}
         max_moisture = DEFAULT_MAX_MOISTURE
         min_moisture = DEFAULT_MIN_MOISTURE
-        max_light_lx = DEFAULT_MAX_BRIGHTNESS
-        min_light_lx = DEFAULT_MIN_BRIGHTNESS
+        max_light_lx = DEFAULT_MAX_ILLUMINANCE
+        min_light_lx = DEFAULT_MIN_ILLUMINANCE
         max_temp = display_temp(
             self.hass,
             DEFAULT_MAX_TEMPERATURE,
@@ -330,10 +330,12 @@ class PlantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     CONF_PLANTBOOK_MAPPING[CONF_MIN_MOISTURE], DEFAULT_MIN_MOISTURE
                 )
                 max_light_lx = opb_plant.attributes.get(
-                    CONF_PLANTBOOK_MAPPING[CONF_MAX_BRIGHTNESS], DEFAULT_MAX_BRIGHTNESS
+                    CONF_PLANTBOOK_MAPPING[CONF_MAX_ILLUMINANCE],
+                    DEFAULT_MAX_ILLUMINANCE,
                 )
                 min_light_lx = opb_plant.attributes.get(
-                    CONF_PLANTBOOK_MAPPING[CONF_MIN_BRIGHTNESS], DEFAULT_MIN_BRIGHTNESS
+                    CONF_PLANTBOOK_MAPPING[CONF_MIN_ILLUMINANCE],
+                    DEFAULT_MIN_ILLUMINANCE,
                 )
                 max_temp = display_temp(
                     self.hass,
@@ -382,8 +384,8 @@ class PlantConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data_schema[vol.Required(OPB_DISPLAY_PID, default=opb_name)] = str
         data_schema[vol.Required(CONF_MAX_MOISTURE, default=max_moisture)] = int
         data_schema[vol.Required(CONF_MIN_MOISTURE, default=min_moisture)] = int
-        data_schema[vol.Required(CONF_MAX_BRIGHTNESS, default=max_light_lx)] = int
-        data_schema[vol.Required(CONF_MIN_BRIGHTNESS, default=min_light_lx)] = int
+        data_schema[vol.Required(CONF_MAX_ILLUMINANCE, default=max_light_lx)] = int
+        data_schema[vol.Required(CONF_MIN_ILLUMINANCE, default=min_light_lx)] = int
         data_schema[vol.Required(CONF_MAX_MMOL, default=max_mmol)] = int
         data_schema[vol.Required(CONF_MIN_MMOL, default=min_mmol)] = int
         data_schema[

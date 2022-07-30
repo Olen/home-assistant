@@ -10,7 +10,7 @@
           "temperature_sensor": "Temperature sensor",
           "moisture_sensor": "Moisture sensor",
           "conductivity_sensor": "Conductivity sensor",
-          "brightness_sensor": "Light sensor",
+          "illuminance_sensor": "Light sensor",
           "humidity_sensor": "Humidity (environment) sensor"
         },
         "data_description": {
@@ -35,8 +35,8 @@
           "display_pid": "Plant species to display",
           "max_moisture": "Maximum moisture level (%)",
           "min_moisture": "Minimum moisture level (%)",
-          "max_brightness": "Maximum light level (lx)",
-          "min_brightness": "Minimum light level (lx)",
+          "max_illuminance": "Maximum light level (lx)",
+          "min_illuminance": "Minimum light level (lx)",
           "max_mmol": "Maximum MMOL",
           "min_mmol": "Minimum MMOL",
           "max_temperature": "Maximum temperature (see above)",
@@ -59,13 +59,13 @@
         "title": "Options",
         "description": "Only update the options you want to modify. Empty fields are ignored.",
         "data": {
-          "check_days": "Brightness check days",
+          "check_days": "Illuminance check days",
           "plant_species": "Species",
           "display_pid": "Plant species to display",
           "temperature_sensor": "Temperature sensor",
           "moisture_sensor": "Moisture sensor",
           "conductivity_sensor": "Conductivity sensor",
-          "brightness_sensor": "Light sensor",
+          "illuminance_sensor": "Light sensor",
           "humidity_sensor": "Humidity (environment) sensor",
           "entity_picture": "Image URL. Will be automatically updated if species is found in OpnePlantbook."
         }
