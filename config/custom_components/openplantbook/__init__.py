@@ -96,7 +96,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             except MissingClientIdOrSecret:
                 plant_data = None
                 _LOGGER.error(
-                    "Missing client ID or secret. Please set up the integration again."
+                    "Missing client ID or secret. Please set up the integration again"
                 )
 
             if plant_data:
@@ -122,7 +122,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             except MissingClientIdOrSecret:
                 plant_data = None
                 _LOGGER.error(
-                    "Missing client ID or secret. Please set up the integration again."
+                    "Missing client ID or secret. Please set up the integration again"
                 )
                 return
             state = len(plant_data[OPB_ATTR_RESULTS])
