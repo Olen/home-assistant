@@ -44,8 +44,11 @@ from .const import (
     ATTR_TEMPERATURE,
     DATA_SOURCE,
     DOMAIN,
+    FLOW_CONDUCTIVITY_TRIGGER,
+    FLOW_DLI_TRIGGER,
     FLOW_HUMIDITY_TRIGGER,
     FLOW_ILLUMINANCE_TRIGGER,
+    FLOW_MOISTURE_TRIGGER,
     FLOW_PLANT_INFO,
     FLOW_TEMPERATURE_TRIGGER,
     OPB_DISPLAY_PID,
@@ -467,7 +470,7 @@ class PlantDevice(Entity):
 
     @property
     def illuminance_trigger(self) -> bool:
-        """Whether we will generate alarms based on illuminance or dli"""
+        """Whether we will generate alarms based on illuminance"""
         return self._config.options.get(FLOW_ILLUMINANCE_TRIGGER, True)
 
     @property
@@ -479,6 +482,21 @@ class PlantDevice(Entity):
     def temperature_trigger(self) -> bool:
         """Whether we will generate alarms based on temperature"""
         return self._config.options.get(FLOW_TEMPERATURE_TRIGGER, True)
+
+    @property
+    def dli_trigger(self) -> bool:
+        """Whether we will generate alarms based on dli"""
+        return self._config.options.get(FLOW_DLI_TRIGGER, True)
+
+    @property
+    def moisture_trigger(self) -> bool:
+        """Whether we will generate alarms based on moisture"""
+        return self._config.options.get(FLOW_MOISTURE_TRIGGER, True)
+
+    @property
+    def conductivity_trigger(self) -> bool:
+        """Whether we will generate alarms based on conductivity"""
+        return self._config.options.get(FLOW_CONDUCTIVITY_TRIGGER, True)
 
     @property
     def extra_state_attributes(self) -> dict:
