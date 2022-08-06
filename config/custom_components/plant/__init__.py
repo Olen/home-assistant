@@ -654,10 +654,12 @@ class PlantDevice(Entity):
         ):
             if float(self.sensor_moisture.state) < float(self.min_moisture.state):
                 self.moisture_status = STATE_LOW
-                new_state = STATE_PROBLEM
+                if self.moisture_trigger:
+                    new_state = STATE_PROBLEM
             elif float(self.sensor_moisture.state) > float(self.max_moisture.state):
                 self.moisture_status = STATE_HIGH
-                new_state = STATE_PROBLEM
+                if self.moisture_trigger:
+                    new_state = STATE_PROBLEM
             else:
                 self.moisture_status = STATE_OK
 
@@ -671,12 +673,14 @@ class PlantDevice(Entity):
                 self.min_conductivity.state
             ):
                 self.conductivity_status = STATE_LOW
-                new_state = STATE_PROBLEM
+                if self.conductivity_trigger:
+                    new_state = STATE_PROBLEM
             elif float(self.sensor_conductivity.state) > float(
                 self.max_conductivity.state
             ):
                 self.conductivity_status = STATE_HIGH
-                new_state = STATE_PROBLEM
+                if self.conductivity_trigger:
+                    new_state = STATE_PROBLEM
             else:
                 self.conductivity_status = STATE_OK
 
@@ -743,13 +747,13 @@ class PlantDevice(Entity):
                 self.dli.extra_state_attributes["last_period"]
             ) < float(self.min_dli.state):
                 self.dli_status = STATE_LOW
-                if self.illuminance_trigger:
+                if self.dli_trigger:
                     new_state = STATE_PROBLEM
             elif float(self.dli.extra_state_attributes["last_period"]) > 0 and float(
                 self.dli.extra_state_attributes["last_period"]
             ) > float(self.max_dli.state):
                 self.dli_status = STATE_HIGH
-                if self.illuminance_trigger:
+                if self.dli_trigger:
                     new_state = STATE_PROBLEM
             else:
                 self.dli_status = STATE_OK
