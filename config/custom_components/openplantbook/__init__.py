@@ -134,7 +134,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     async def clean_cache(call):
         hours = call.data.get(ATTR_HOURS)
-        if not hours:
+        if hours is None or not isinstance(hours, int):
             hours = CACHE_TIME
         if ATTR_SPECIES in hass.data[DOMAIN]:
             for species in list(hass.data[DOMAIN][ATTR_SPECIES]):
@@ -159,6 +159,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Unload a config entry."""
+    _LOGGER.debug("Unloading %s", DOMAIN)
+    _LOGGER.debug("Removing cache")
+    await hass.services.async_call(
+        domain=DOMAIN,
+        service=OPB_SERVICE_CLEAN_CACHE,
+        service_data={ATTR_HOURS: 0},
+        blocking=True,
+        limit=30,
+    )
+    _LOGGER.debug("Removing search result")
+    hass.states.async_remove(f"{DOMAIN}.{OPB_ATTR_SEARCH_RESULT}")
+    _LOGGER.debug("Removing services")
+    hass.services.async_remove(DOMAIN, OPB_SERVICE_SEARCH)
+    hass.services.async_remove(DOMAIN, OPB_SERVICE_GET)
+    hass.services.async_remove(DOMAIN, OPB_SERVICE_CLEAN_CACHE)
+    # And we get rid of the rest
     hass.data.pop(DOMAIN)
 
     return True
