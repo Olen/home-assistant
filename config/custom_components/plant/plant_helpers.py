@@ -189,26 +189,31 @@ class PlantHelper:
 
         # If we have image defined in the config, or a local file
         # prefer that.  If neither, image will be set to openplantbook
-        try:
-            jpeg_exists = cv.isfile(f"{DEFAULT_IMAGE_PATH}{config[ATTR_SPECIES]}.jpg")
-        except vol.Invalid:
-            jpeg_exists = None
-        try:
-            png_exists = cv.isfile(f"{DEFAULT_IMAGE_PATH}{config[ATTR_SPECIES]}.png")
-        except vol.Invalid:
-            png_exists = None
+        jpeg_exists = None
+        png_exists = None
+
+        if ATTR_SPECIES in config:
+            try:
+                jpeg_exists = cv.isfile(
+                    f"{DEFAULT_IMAGE_PATH}{config[ATTR_SPECIES]}.jpg"
+                )
+            except vol.Invalid:
+                jpeg_exists = None
+            try:
+                png_exists = cv.isfile(
+                    f"{DEFAULT_IMAGE_PATH}{config[ATTR_SPECIES]}.png"
+                )
+            except vol.Invalid:
+                png_exists = None
 
         if ATTR_ENTITY_PICTURE in config:
             entity_picture = config[ATTR_ENTITY_PICTURE]
-        elif ATTR_IMAGE in config:
+        elif ATTR_IMAGE in config and config[ATTR_IMAGE] != DOMAIN_PLANTBOOK:
             entity_picture = config[ATTR_IMAGE]
         elif jpeg_exists:
             entity_picture = f"{DEFAULT_IMAGE_LOCAL_URL}{config[ATTR_SPECIES]}.jpg"
         elif png_exists:
             entity_picture = f"{DEFAULT_IMAGE_LOCAL_URL}{config[ATTR_SPECIES]}.png"
-        # Clear old cruft
-        if entity_picture == "openplantbook":
-            entity_picture = None
 
         if ATTR_SENSORS not in config:
             config[ATTR_SENSORS] = {}
