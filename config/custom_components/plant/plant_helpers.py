@@ -98,6 +98,8 @@ class PlantHelper:
 
         if not self.has_openplantbook:
             return None
+        if not species or species == "":
+            return None
 
         try:
             plant_search = await self.hass.services.async_call(
@@ -132,7 +134,7 @@ class PlantHelper:
         """Get information about a plant species from OpenPlantbook"""
         if not self.has_openplantbook:
             return None
-        if species == "":
+        if not species or species == "":
             return None
 
         plant_get = await self.hass.services.async_call(
@@ -220,8 +222,7 @@ class PlantHelper:
 
         if config.get(OPB_DISPLAY_PID, "") == "":
             config[OPB_DISPLAY_PID] = None
-
-        opb_plant = await self.openplantbook_get(config[ATTR_SPECIES])
+        opb_plant = await self.openplantbook_get(config.get(ATTR_SPECIES))
         if opb_plant:
             data_source = DATA_SOURCE_PLANTBOOK
             max_moisture = opb_plant.get(
@@ -291,7 +292,6 @@ class PlantHelper:
                 )
             ):
                 entity_picture = opb_plant.get(FLOW_PLANT_IMAGE)
-
             if (
                 FLOW_FORCE_SPECIES_UPDATE in config
                 and config[FLOW_FORCE_SPECIES_UPDATE] is True
@@ -313,7 +313,7 @@ class PlantHelper:
             DATA_SOURCE: data_source,
             FLOW_PLANT_INFO: {
                 ATTR_NAME: config.get(ATTR_NAME),
-                ATTR_SPECIES: config[ATTR_SPECIES] or "",
+                ATTR_SPECIES: config.get(ATTR_SPECIES) or "",
                 ATTR_ENTITY_PICTURE: entity_picture or "",
                 OPB_DISPLAY_PID: display_species or "",
                 ATTR_LIMITS: {
