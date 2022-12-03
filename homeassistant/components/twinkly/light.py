@@ -30,7 +30,7 @@ from .const import (
     ATTR_VERSION,
     CONF_HOST,
     CONF_ID,
-    CONF_NAME,
+    ONF_NAME,
     DATA_CLIENT,
     DATA_DEVICE_INFO,
     DEV_LED_PROFILE,
@@ -176,6 +176,13 @@ class TwinklyLight(LightEntity):
             self._attr_supported_features = (
                 self.supported_features & ~LightEntityFeature.EFFECT
             )
+            device_registry = dr.async_get(self.hass)
+            device_entry = device_registry.async_get_device({(DOMAIN, self._id)}, set())
+            if device_entry:
+                device_registry.async_update_device(
+                    device_entry.id, sw_version=self._software_version
+                )
+
             device_registry = dr.async_get(self.hass)
             device_entry = device_registry.async_get_device({(DOMAIN, self._id)}, set())
             if device_entry:
