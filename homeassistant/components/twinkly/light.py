@@ -183,6 +183,13 @@ class TwinklyLight(LightEntity):
                     device_entry.id, sw_version=self._software_version
                 )
 
+            device_registry = dr.async_get(self.hass)
+            device_entry = device_registry.async_get_device({(DOMAIN, self._id)}, set())
+            if device_entry:
+                device_registry.async_update_device(
+                    device_entry.id, sw_version=self._software_version
+                )
+
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn device on."""
         if ATTR_BRIGHTNESS in kwargs:
