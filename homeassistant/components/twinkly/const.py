@@ -23,8 +23,6 @@ DEV_PROFILE_RGBW = "RGBW"
 DATA_CLIENT = "client"
 DATA_DEVICE_INFO = "device_info"
 
-<<<<<<< HEAD
-=======
 MODE_COLOR = "color"
 MODE_EFFECT = "effect"
 MODE_MOVIE = "movie"
