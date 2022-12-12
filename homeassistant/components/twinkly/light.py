@@ -24,7 +24,6 @@ from homeassistant.const import ATTR_SW_VERSION, CONF_MODEL
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers import device_registry as dr
-# from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
@@ -177,7 +176,6 @@ class TwinklyLight(LightEntity):
             self._attr_supported_features = (
                 self.supported_features & ~LightEntityFeature.EFFECT
             )
-
             device_registry = dr.async_get(self.hass)
             device_entry = device_registry.async_get_device({(DOMAIN, self._id)}, set())
             if device_entry:
