@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Generic
 
 from aiopyarr import Diskspace, RootFolder, SystemStatus
@@ -15,17 +15,9 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    DATA_BYTES,
-    DATA_GIGABYTES,
-    DATA_KILOBYTES,
-    DATA_MEGABYTES,
-)
+from homeassistant.const import EntityCategory, UnitOfInformation
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.issue_registry import IssueSeverity, async_create_issue
-from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType
 
 from . import RadarrEntity
 from .const import DOMAIN
@@ -35,7 +27,7 @@ from .coordinator import RadarrDataUpdateCoordinator, T
 def get_space(data: list[Diskspace], name: str) -> str:
     """Get space."""
     space = [
-        mount.freeSpace / 1024 ** BYTE_SIZES.index(DATA_GIGABYTES)
+        mount.freeSpace / 1024 ** BYTE_SIZES.index(UnitOfInformation.GIGABYTES)
         for mount in data
         if name in mount.path
     ]
@@ -76,14 +68,15 @@ SENSOR_TYPES: dict[str, RadarrSensorEntityDescription[Any]] = {
     "disk_space": RadarrSensorEntityDescription(
         key="disk_space",
         name="Disk space",
-        native_unit_of_measurement=DATA_GIGABYTES,
+        native_unit_of_measurement=UnitOfInformation.GIGABYTES,
+        device_class=SensorDeviceClass.DATA_SIZE,
         icon="mdi:harddisk",
         value_fn=get_space,
         description_fn=get_modified_description,
     ),
     "movie": RadarrSensorEntityDescription[int](
         key="movies",
-        name="Movies",
+        translation_key="movies",
         native_unit_of_measurement="Movies",
         icon="mdi:television",
         entity_registry_enabled_default=False,
@@ -91,40 +84,22 @@ SENSOR_TYPES: dict[str, RadarrSensorEntityDescription[Any]] = {
     ),
     "status": RadarrSensorEntityDescription[SystemStatus](
         key="start_time",
-        name="Start time",
+        translation_key="start_time",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value_fn=lambda data, _: data.startTime.replace(tzinfo=timezone.utc),
+        value_fn=lambda data, _: data.startTime.replace(tzinfo=UTC),
     ),
 }
 
 BYTE_SIZES = [
-    DATA_BYTES,
-    DATA_KILOBYTES,
-    DATA_MEGABYTES,
-    DATA_GIGABYTES,
+    UnitOfInformation.BYTES,
+    UnitOfInformation.KILOBYTES,
+    UnitOfInformation.MEGABYTES,
+    UnitOfInformation.GIGABYTES,
 ]
 
 PARALLEL_UPDATES = 1
-
-
-async def async_setup_platform(
-    hass: HomeAssistant,
-    config: ConfigType,
-    async_add_entities: AddEntitiesCallback,
-    discovery_info: DiscoveryInfoType | None = None,
-) -> None:
-    """Set up the Radarr platform."""
-    async_create_issue(
-        hass,
-        DOMAIN,
-        "removed_yaml",
-        breaks_in_ha_version="2022.12.0",
-        is_fixable=False,
-        severity=IssueSeverity.WARNING,
-        translation_key="removed_yaml",
-    )
 
 
 async def async_setup_entry(

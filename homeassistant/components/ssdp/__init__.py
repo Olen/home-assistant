@@ -42,13 +42,14 @@ from async_upnp_client.utils import CaseInsensitiveDict
 from homeassistant import config_entries
 from homeassistant.components import network
 from homeassistant.const import (
+    EVENT_HOMEASSISTANT_STARTED,
     EVENT_HOMEASSISTANT_STOP,
     MATCH_ALL,
     __version__ as current_version,
 )
-from homeassistant.core import HomeAssistant, callback as core_callback
+from homeassistant.core import Event, HomeAssistant, callback as core_callback
 from homeassistant.data_entry_flow import BaseServiceInfo
-from homeassistant.helpers import discovery_flow
+from homeassistant.helpers import config_validation as cv, discovery_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.instance_id import async_get as async_get_instance_id
@@ -62,7 +63,7 @@ SSDP_SCANNER = "scanner"
 UPNP_SERVER = "server"
 UPNP_SERVER_MIN_PORT = 40000
 UPNP_SERVER_MAX_PORT = 40100
-SCAN_INTERVAL = timedelta(minutes=2)
+SCAN_INTERVAL = timedelta(minutes=10)
 
 IPV4_BROADCAST = IPv4Address("255.255.255.255")
 
@@ -106,42 +107,23 @@ PRIMARY_MATCH_KEYS = [
 _LOGGER = logging.getLogger(__name__)
 
 
-@dataclass
-class _HaServiceDescription:
-    """Keys added by HA."""
-
-    x_homeassistant_matching_domains: set[str] = field(default_factory=set)
+CONFIG_SCHEMA = cv.empty_config_schema(DOMAIN)
 
 
-@dataclass
-class _SsdpServiceDescription:
-    """SSDP info with optional keys."""
+@dataclass(slots=True)
+class SsdpServiceInfo(BaseServiceInfo):
+    """Prepared info from ssdp/upnp entries."""
 
     ssdp_usn: str
     ssdp_st: str
+    upnp: Mapping[str, Any]
     ssdp_location: str | None = None
     ssdp_nt: str | None = None
     ssdp_udn: str | None = None
     ssdp_ext: str | None = None
     ssdp_server: str | None = None
     ssdp_headers: Mapping[str, Any] = field(default_factory=dict)
-
-
-@dataclass
-class _UpnpServiceDescription:
-    """UPnP info."""
-
-    upnp: Mapping[str, Any]
-
-
-@dataclass
-class SsdpServiceInfo(
-    _HaServiceDescription,
-    _SsdpServiceDescription,
-    _UpnpServiceDescription,
-    BaseServiceInfo,
-):
-    """Prepared info from ssdp/upnp entries."""
+    x_homeassistant_matching_domains: set[str] = field(default_factory=set)
 
 
 SsdpChange = Enum("SsdpChange", "ALIVE BYEBYE UPDATE")
@@ -171,7 +153,7 @@ async def async_register_callback(
 
 
 @bind_hass
-async def async_get_discovery_info_by_udn_st(  # pylint: disable=invalid-name
+async def async_get_discovery_info_by_udn_st(
     hass: HomeAssistant, udn: str, st: str
 ) -> SsdpServiceInfo | None:
     """Fetch the discovery info cache."""
@@ -180,7 +162,7 @@ async def async_get_discovery_info_by_udn_st(  # pylint: disable=invalid-name
 
 
 @bind_hass
-async def async_get_discovery_info_by_st(  # pylint: disable=invalid-name
+async def async_get_discovery_info_by_st(
     hass: HomeAssistant, st: str
 ) -> list[SsdpServiceInfo]:
     """Fetch all the entries matching the st."""
@@ -202,7 +184,9 @@ async def async_build_source_set(hass: HomeAssistant) -> set[IPv4Address | IPv6A
     return {
         source_ip
         for source_ip in await network.async_get_enabled_source_ips(hass)
-        if not source_ip.is_loopback and not source_ip.is_global
+        if not source_ip.is_loopback
+        and not source_ip.is_global
+        and (source_ip.version == 6 and source_ip.scope_id or source_ip.version == 4)
     }
 
 
@@ -399,7 +383,7 @@ class Scanner:
 
         self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, self.async_stop)
         self._cancel_scan = async_track_time_interval(
-            self.hass, self.async_scan, SCAN_INTERVAL
+            self.hass, self.async_scan, SCAN_INTERVAL, name="SSDP scanner"
         )
 
         # Trigger the initial-scan.
@@ -424,7 +408,7 @@ class Scanner:
             source = fix_ipv6_address_scope_id(source) or source
             self._ssdp_listeners.append(
                 SsdpListener(
-                    async_callback=self._ssdp_listener_callback,
+                    callback=self._ssdp_listener_callback,
                     source=source,
                     target=target,
                     device_tracker=device_tracker,
@@ -458,7 +442,7 @@ class Scanner:
             if _async_headers_match(combined_headers, lower_match_dict)
         ]
 
-    async def _ssdp_listener_callback(
+    def _ssdp_listener_callback(
         self,
         ssdp_device: SsdpDevice,
         dst: DeviceOrServiceType,
@@ -469,37 +453,79 @@ class Scanner:
             "SSDP: ssdp_device: %s, dst: %s, source: %s", ssdp_device, dst, source
         )
 
+        assert self._description_cache
+
         location = ssdp_device.location
-        info_desc = None
+        _, info_desc = self._description_cache.peek_description_dict(location)
+        if info_desc is None:
+            # Fetch info desc in separate task and process from there.
+            self.hass.async_create_task(
+                self._ssdp_listener_process_with_lookup(ssdp_device, dst, source)
+            )
+            return
+
+        # Info desc known, process directly.
+        self._ssdp_listener_process(ssdp_device, dst, source, info_desc)
+
+    async def _ssdp_listener_process_with_lookup(
+        self,
+        ssdp_device: SsdpDevice,
+        dst: DeviceOrServiceType,
+        source: SsdpSource,
+    ) -> None:
+        """Handle a device/service change."""
+        location = ssdp_device.location
+        self._ssdp_listener_process(
+            ssdp_device,
+            dst,
+            source,
+            await self._async_get_description_dict(location),
+        )
+
+    def _ssdp_listener_process(
+        self,
+        ssdp_device: SsdpDevice,
+        dst: DeviceOrServiceType,
+        source: SsdpSource,
+        info_desc: Mapping[str, Any],
+    ) -> None:
+        """Handle a device/service change."""
+        matching_domains: set[str] = set()
         combined_headers = ssdp_device.combined_headers(dst)
         callbacks = self._async_get_matching_callbacks(combined_headers)
-        matching_domains: set[str] = set()
 
         # If there are no changes from a search, do not trigger a config flow
         if source != SsdpSource.SEARCH_ALIVE:
-            info_desc = await self._async_get_description_dict(location) or {}
             matching_domains = self.integration_matchers.async_matching_domains(
                 CaseInsensitiveDict(combined_headers.as_dict(), **info_desc)
             )
 
-        if not callbacks and not matching_domains:
+        if (
+            not callbacks
+            and not matching_domains
+            and source != SsdpSource.ADVERTISEMENT_BYEBYE
+        ):
             return
 
-        if info_desc is None:
-            info_desc = await self._async_get_description_dict(location) or {}
         discovery_info = discovery_info_from_headers_and_description(
             combined_headers, info_desc
         )
         discovery_info.x_homeassistant_matching_domains = matching_domains
-        ssdp_change = SSDP_SOURCE_SSDP_CHANGE_MAPPING[source]
-        await _async_process_callbacks(callbacks, discovery_info, ssdp_change)
+
+        if callbacks:
+            ssdp_change = SSDP_SOURCE_SSDP_CHANGE_MAPPING[source]
+            self.hass.async_create_task(
+                _async_process_callbacks(callbacks, discovery_info, ssdp_change)
+            )
 
         # Config flows should only be created for alive/update messages from alive devices
-        if ssdp_change == SsdpChange.BYEBYE:
+        if source == SsdpSource.ADVERTISEMENT_BYEBYE:
+            self._async_dismiss_discoveries(discovery_info)
             return
 
         _LOGGER.debug("Discovery info: %s", discovery_info)
 
+        location = ssdp_device.location
         for domain in matching_domains:
             _LOGGER.debug("Discovered %s at %s", domain, location)
             discovery_flow.async_create_flow(
@@ -509,11 +535,31 @@ class Scanner:
                 discovery_info,
             )
 
+    def _async_dismiss_discoveries(
+        self, byebye_discovery_info: SsdpServiceInfo
+    ) -> None:
+        """Dismiss all discoveries for the given address."""
+        for flow in self.hass.config_entries.flow.async_progress_by_init_data_type(
+            SsdpServiceInfo,
+            lambda service_info: bool(
+                service_info.ssdp_st == byebye_discovery_info.ssdp_st
+                and service_info.ssdp_location == byebye_discovery_info.ssdp_location
+            ),
+        ):
+            self.hass.config_entries.flow.async_abort(flow["flow_id"])
+
     async def _async_get_description_dict(
         self, location: str | None
     ) -> Mapping[str, str]:
         """Get description dict."""
         assert self._description_cache is not None
+
+        has_description, description = self._description_cache.peek_description_dict(
+            location
+        )
+        if has_description:
+            return description or {}
+
         return await self._description_cache.async_get_description_dict(location) or {}
 
     async def _async_headers_to_discovery_info(
@@ -524,13 +570,12 @@ class Scanner:
         Building this is a bit expensive so we only do it on demand.
         """
         assert self._description_cache is not None
+
         location = headers["location"]
-        info_desc = (
-            await self._description_cache.async_get_description_dict(location) or {}
-        )
+        info_desc = await self._async_get_description_dict(location)
         return discovery_info_from_headers_and_description(headers, info_desc)
 
-    async def async_get_discovery_info_by_udn_st(  # pylint: disable=invalid-name
+    async def async_get_discovery_info_by_udn_st(
         self, udn: str, st: str
     ) -> SsdpServiceInfo | None:
         """Return discovery_info for a udn and st."""
@@ -538,9 +583,7 @@ class Scanner:
             return await self._async_headers_to_discovery_info(headers)
         return None
 
-    async def async_get_discovery_info_by_st(  # pylint: disable=invalid-name
-        self, st: str
-    ) -> list[SsdpServiceInfo]:
+    async def async_get_discovery_info_by_st(self, st: str) -> list[SsdpServiceInfo]:
         """Return matching discovery_infos for a st."""
         return [
             await self._async_headers_to_discovery_info(headers)
@@ -563,7 +606,7 @@ def discovery_info_from_headers_and_description(
 ) -> SsdpServiceInfo:
     """Convert headers and description to discovery_info."""
     ssdp_usn = combined_headers["usn"]
-    ssdp_st = combined_headers.get("st")
+    ssdp_st = combined_headers.get_lower("st")
     if isinstance(info_desc, CaseInsensitiveDict):
         upnp_info = {**info_desc.as_dict()}
     else:
@@ -583,11 +626,11 @@ def discovery_info_from_headers_and_description(
     return SsdpServiceInfo(
         ssdp_usn=ssdp_usn,
         ssdp_st=ssdp_st,
-        ssdp_ext=combined_headers.get("ext"),
-        ssdp_server=combined_headers.get("server"),
-        ssdp_location=combined_headers.get("location"),
-        ssdp_udn=combined_headers.get("_udn"),
-        ssdp_nt=combined_headers.get("nt"),
+        ssdp_ext=combined_headers.get_lower("ext"),
+        ssdp_server=combined_headers.get_lower("server"),
+        ssdp_location=combined_headers.get_lower("location"),
+        ssdp_udn=combined_headers.get_lower("_udn"),
+        ssdp_nt=combined_headers.get_lower("nt"),
         ssdp_headers=combined_headers,
         upnp=upnp_info,
     )
@@ -663,11 +706,12 @@ async def _async_find_next_available_port(source: AddressTupleVXType) -> int:
     test_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
     for port in range(UPNP_SERVER_MIN_PORT, UPNP_SERVER_MAX_PORT):
+        addr = (source[0],) + (port,) + source[2:]
         try:
-            test_socket.bind(source)
+            test_socket.bind(addr)
             return port
         except OSError:
-            if port == UPNP_SERVER_MAX_PORT:
+            if port == UPNP_SERVER_MAX_PORT - 1:
                 raise
 
     raise RuntimeError("unreachable")
@@ -683,15 +727,18 @@ class Server:
 
     async def async_start(self) -> None:
         """Start the server."""
-        self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, self.async_stop)
-        await self._async_start_upnp_servers()
+        bus = self.hass.bus
+        bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, self.async_stop)
+        bus.async_listen_once(
+            EVENT_HOMEASSISTANT_STARTED, self._async_start_upnp_servers
+        )
 
     async def _async_get_instance_udn(self) -> str:
         """Get Unique Device Name for this instance."""
         instance_id = await async_get_instance_id(self.hass)
         return f"uuid:{instance_id[0:8]}-{instance_id[8:12]}-{instance_id[12:16]}-{instance_id[16:20]}-{instance_id[20:32]}".upper()
 
-    async def _async_start_upnp_servers(self) -> None:
+    async def _async_start_upnp_servers(self, event: Event) -> None:
         """Start the UPnP/SSDP servers."""
         # Update UDN with our instance UDN.
         udn = await self._async_get_instance_udn()

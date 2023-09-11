@@ -2,11 +2,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any, TypeVar
 
 from meteofrance_api.helpers import (
     get_warning_text_status_from_indice_color,
     readeable_phenomenoms_dict,
 )
+from meteofrance_api.model.forecast import Forecast
+from meteofrance_api.model.rain import Rain
+from meteofrance_api.model.warning import CurrentPhenomenons
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -24,8 +28,7 @@ from homeassistant.const import (
     UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
@@ -44,6 +47,8 @@ from .const import (
     MANUFACTURER,
     MODEL,
 )
+
+_DataT = TypeVar("_DataT", bound=Rain | Forecast | CurrentPhenomenons)
 
 
 @dataclass
@@ -131,6 +136,14 @@ SENSOR_TYPES: tuple[MeteoFranceSensorEntityDescription, ...] = (
         entity_registry_enabled_default=False,
         data_path="today_forecast:weather12H:desc",
     ),
+    MeteoFranceSensorEntityDescription(
+        key="humidity",
+        name="Humidity",
+        native_unit_of_measurement=PERCENTAGE,
+        device_class=SensorDeviceClass.HUMIDITY,
+        state_class=SensorStateClass.MEASUREMENT,
+        data_path="current_forecast:humidity",
+    ),
 )
 
 SENSOR_TYPES_RAIN: tuple[MeteoFranceSensorEntityDescription, ...] = (
@@ -180,11 +193,14 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up the Meteo-France sensor platform."""
-    coordinator_forecast = hass.data[DOMAIN][entry.entry_id][COORDINATOR_FORECAST]
-    coordinator_rain = hass.data[DOMAIN][entry.entry_id][COORDINATOR_RAIN]
-    coordinator_alert = hass.data[DOMAIN][entry.entry_id][COORDINATOR_ALERT]
+    data = hass.data[DOMAIN][entry.entry_id]
+    coordinator_forecast: DataUpdateCoordinator[Forecast] = data[COORDINATOR_FORECAST]
+    coordinator_rain: DataUpdateCoordinator[Rain] | None = data[COORDINATOR_RAIN]
+    coordinator_alert: DataUpdateCoordinator[CurrentPhenomenons] | None = data[
+        COORDINATOR_ALERT
+    ]
 
-    entities = [
+    entities: list[MeteoFranceSensor[Any]] = [
         MeteoFranceSensor(coordinator_forecast, description)
         for description in SENSOR_TYPES
     ]
@@ -216,7 +232,7 @@ async def async_setup_entry(
     async_add_entities(entities, False)
 
 
-class MeteoFranceSensor(CoordinatorEntity, SensorEntity):
+class MeteoFranceSensor(CoordinatorEntity[DataUpdateCoordinator[_DataT]], SensorEntity):
     """Representation of a Meteo-France sensor."""
 
     entity_description: MeteoFranceSensorEntityDescription
@@ -224,7 +240,7 @@ class MeteoFranceSensor(CoordinatorEntity, SensorEntity):
 
     def __init__(
         self,
-        coordinator: DataUpdateCoordinator,
+        coordinator: DataUpdateCoordinator[_DataT],
         description: MeteoFranceSensorEntityDescription,
     ) -> None:
         """Initialize the Meteo-France sensor."""
@@ -238,11 +254,7 @@ class MeteoFranceSensor(CoordinatorEntity, SensorEntity):
     @property
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
-        assert (
-            self.platform
-            and self.platform.config_entry
-            and self.platform.config_entry.unique_id
-        )
+        assert self.platform.config_entry and self.platform.config_entry.unique_id
         return DeviceInfo(
             entry_type=DeviceEntryType.SERVICE,
             identifiers={(DOMAIN, self.platform.config_entry.unique_id)},
@@ -266,11 +278,10 @@ class MeteoFranceSensor(CoordinatorEntity, SensorEntity):
                 value = data[0][path[1]]
 
         # General case
+        elif len(path) == 3:
+            value = data[path[1]][path[2]]
         else:
-            if len(path) == 3:
-                value = data[path[1]][path[2]]
-            else:
-                value = data[path[1]]
+            value = data[path[1]]
 
         if self.entity_description.key in ("wind_speed", "wind_gust"):
             # convert API wind speed from m/s to km/h
@@ -278,7 +289,7 @@ class MeteoFranceSensor(CoordinatorEntity, SensorEntity):
         return value
 
 
-class MeteoFranceRainSensor(MeteoFranceSensor):
+class MeteoFranceRainSensor(MeteoFranceSensor[Rain]):
     """Representation of a Meteo-France rain sensor."""
 
     @property
@@ -304,12 +315,12 @@ class MeteoFranceRainSensor(MeteoFranceSensor):
         }
 
 
-class MeteoFranceAlertSensor(MeteoFranceSensor):
+class MeteoFranceAlertSensor(MeteoFranceSensor[CurrentPhenomenons]):
     """Representation of a Meteo-France alert sensor."""
 
     def __init__(
         self,
-        coordinator: DataUpdateCoordinator,
+        coordinator: DataUpdateCoordinator[CurrentPhenomenons],
         description: MeteoFranceSensorEntityDescription,
     ) -> None:
         """Initialize the Meteo-France sensor."""

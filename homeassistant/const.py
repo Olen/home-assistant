@@ -1,20 +1,19 @@
 """Constants used by Home Assistant components."""
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Final
-
-from .backports.enum import StrEnum
 
 APPLICATION_NAME: Final = "HomeAssistant"
 MAJOR_VERSION: Final = 2023
-MINOR_VERSION: Final = 1
+MINOR_VERSION: Final = 10
 PATCH_VERSION: Final = "0.dev0"
 __short_version__: Final = f"{MAJOR_VERSION}.{MINOR_VERSION}"
 __version__: Final = f"{__short_version__}.{PATCH_VERSION}"
-REQUIRED_PYTHON_VER: Final[tuple[int, int, int]] = (3, 9, 0)
-REQUIRED_NEXT_PYTHON_VER: Final[tuple[int, int, int]] = (3, 10, 0)
+REQUIRED_PYTHON_VER: Final[tuple[int, int, int]] = (3, 11, 0)
+REQUIRED_NEXT_PYTHON_VER: Final[tuple[int, int, int]] = (3, 11, 0)
 # Truthy date string triggers showing related deprecation warning messages.
-REQUIRED_NEXT_PYTHON_HA_RELEASE: Final = "2023.2"
+REQUIRED_NEXT_PYTHON_HA_RELEASE: Final = ""
 
 # Format for platform files
 PLATFORM_FORMAT: Final = "{platform}.{domain}"
@@ -31,11 +30,16 @@ class Platform(StrEnum):
     CAMERA = "camera"
     CLIMATE = "climate"
     COVER = "cover"
+    DATE = "date"
+    DATETIME = "datetime"
     DEVICE_TRACKER = "device_tracker"
+    EVENT = "event"
     FAN = "fan"
     GEO_LOCATION = "geo_location"
     HUMIDIFIER = "humidifier"
+    IMAGE = "image"
     IMAGE_PROCESSING = "image_processing"
+    LAWN_MOWER = "lawn_mower"
     LIGHT = "light"
     LOCK = "lock"
     MAILBOX = "mailbox"
@@ -50,9 +54,11 @@ class Platform(StrEnum):
     STT = "stt"
     SWITCH = "switch"
     TEXT = "text"
+    TIME = "time"
     TTS = "tts"
     VACUUM = "vacuum"
     UPDATE = "update"
+    WAKE_WORD = "wake_word"
     WATER_HEATER = "water_heater"
     WEATHER = "weather"
 
@@ -217,8 +223,9 @@ CONF_RECIPIENT: Final = "recipient"
 CONF_REGION: Final = "region"
 CONF_REPEAT: Final = "repeat"
 CONF_RESOURCE: Final = "resource"
-CONF_RESOURCES: Final = "resources"
 CONF_RESOURCE_TEMPLATE: Final = "resource_template"
+CONF_RESOURCES: Final = "resources"
+CONF_RESPONSE_VARIABLE: Final = "response_variable"
 CONF_RGB: Final = "rgb"
 CONF_ROOM: Final = "room"
 CONF_SCAN_INTERVAL: Final = "scan_interval"
@@ -256,6 +263,7 @@ CONF_UNIT_SYSTEM: Final = "unit_system"
 CONF_UNTIL: Final = "until"
 CONF_URL: Final = "url"
 CONF_USERNAME: Final = "username"
+CONF_UUID: Final = "uuid"
 CONF_VALUE_TEMPLATE: Final = "value_template"
 CONF_VARIABLES: Final = "variables"
 CONF_VERIFY_SSL: Final = "verify_ssl"
@@ -516,6 +524,7 @@ class UnitOfEnergy(StrEnum):
 
     GIGA_JOULE = "GJ"
     KILO_WATT_HOUR = "kWh"
+    MEGA_JOULE = "MJ"
     MEGA_WATT_HOUR = "MWh"
     WATT_HOUR = "Wh"
 
@@ -722,6 +731,7 @@ class UnitOfVolume(StrEnum):
     """Volume units."""
 
     CUBIC_FEET = "ft³"
+    CENTUM_CUBIC_FEET = "CCF"
     CUBIC_METERS = "m³"
     LITERS = "L"
     MILLILITERS = "mL"
@@ -749,9 +759,19 @@ VOLUME_GALLONS: Final = "gal"
 VOLUME_FLUID_OUNCE: Final = "fl. oz."
 """Deprecated: please use UnitOfVolume.FLUID_OUNCES"""
 
+
 # Volume Flow Rate units
+class UnitOfVolumeFlowRate(StrEnum):
+    """Volume flow rate units."""
+
+    CUBIC_METERS_PER_HOUR = "m³/h"
+    CUBIC_FEET_PER_MINUTE = "ft³/m"
+
+
 VOLUME_FLOW_RATE_CUBIC_METERS_PER_HOUR: Final = "m³/h"
+"""Deprecated: please use UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR"""
 VOLUME_FLOW_RATE_CUBIC_FEET_PER_MINUTE: Final = "ft³/m"
+"""Deprecated: please use UnitOfVolumeFlowRate.CUBIC_FEET_PER_MINUTE"""
 
 # Area units
 AREA_SQUARE_METERS: Final = "m²"
@@ -767,6 +787,7 @@ class UnitOfMass(StrEnum):
     MICROGRAMS = "µg"
     OUNCES = "oz"
     POUNDS = "lb"
+    STONES = "st"
 
 
 MASS_GRAMS: Final = "g"
@@ -1018,6 +1039,13 @@ DATA_RATE_GIBIBYTES_PER_SECOND: Final = "GiB/s"
 """Deprecated: please use UnitOfDataRate.GIBIBYTES_PER_SECOND"""
 
 
+# States
+COMPRESSED_STATE_STATE = "s"
+COMPRESSED_STATE_ATTRIBUTES = "a"
+COMPRESSED_STATE_CONTEXT = "c"
+COMPRESSED_STATE_LAST_CHANGED = "lc"
+COMPRESSED_STATE_LAST_UPDATED = "lu"
+
 # #### SERVICES ####
 SERVICE_HOMEASSISTANT_STOP: Final = "stop"
 SERVICE_HOMEASSISTANT_RESTART: Final = "restart"
@@ -1075,6 +1103,7 @@ SERVER_PORT: Final = 8123
 URL_ROOT: Final = "/"
 URL_API: Final = "/api/"
 URL_API_STREAM: Final = "/api/stream"
+URL_API_CORE_STATE: Final = "/api/core/state"
 URL_API_CONFIG: Final = "/api/config"
 URL_API_STATES: Final = "/api/states"
 URL_API_STATES_ENTITY: Final = "/api/states/{}"
@@ -1141,3 +1170,24 @@ CAST_APP_ID_HOMEASSISTANT_LOVELACE: Final = "A078F6B0"
 HASSIO_USER_NAME = "Supervisor"
 
 SIGNAL_BOOTSTRAP_INTEGRATIONS = "bootstrap_integrations"
+
+# Date/Time formats
+FORMAT_DATE: Final = "%Y-%m-%d"
+FORMAT_TIME: Final = "%H:%M:%S"
+FORMAT_DATETIME: Final = f"{FORMAT_DATE} {FORMAT_TIME}"
+
+
+class EntityCategory(StrEnum):
+    """Category of an entity.
+
+    An entity with a category will:
+    - Not be exposed to cloud, Alexa, or Google Assistant components
+    - Not be included in indirect service calls to devices or areas
+    """
+
+    # Config: An entity which allows changing the configuration of a device.
+    CONFIG = "config"
+
+    # Diagnostic: An entity exposing some configuration parameter,
+    # or diagnostics of a device.
+    DIAGNOSTIC = "diagnostic"

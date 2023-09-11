@@ -47,7 +47,7 @@ class SaunaClimate(ToloSaunaCoordinatorEntity, ClimateEntity):
     _attr_max_temp = DEFAULT_MAX_TEMP
     _attr_min_humidity = DEFAULT_MIN_HUMIDITY
     _attr_min_temp = DEFAULT_MIN_TEMP
-    _attr_name = "Sauna Climate"
+    _attr_name = None
     _attr_precision = PRECISION_WHOLE
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
@@ -130,9 +130,9 @@ class SaunaClimate(ToloSaunaCoordinatorEntity, ClimateEntity):
         """Set fan mode."""
         self.coordinator.client.set_fan_on(fan_mode == FAN_ON)
 
-    def set_humidity(self, humidity: float) -> None:
+    def set_humidity(self, humidity: int) -> None:
         """Set desired target humidity."""
-        self.coordinator.client.set_target_humidity(round(humidity))
+        self.coordinator.client.set_target_humidity(humidity)
 
     def set_temperature(self, **kwargs: Any) -> None:
         """Set desired target temperature."""

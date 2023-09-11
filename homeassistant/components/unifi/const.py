@@ -8,13 +8,14 @@ LOGGER = logging.getLogger(__package__)
 DOMAIN = "unifi"
 
 PLATFORMS = [
+    Platform.BUTTON,
     Platform.DEVICE_TRACKER,
+    Platform.IMAGE,
     Platform.SENSOR,
     Platform.SWITCH,
     Platform.UPDATE,
 ]
 
-CONF_CONTROLLER = "controller"
 CONF_SITE_ID = "site"
 
 UNIFI_WIRELESS_CLIENTS = "unifi_wireless_clients"

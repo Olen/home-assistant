@@ -6,7 +6,7 @@ from datetime import timedelta
 
 from pyfritzhome import Fritzhome, FritzhomeDevice, LoginError
 from pyfritzhome.devicetypes import FritzhomeTemplate
-import requests
+from requests.exceptions import ConnectionError as RequestConnectionError, HTTPError
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -29,11 +29,15 @@ class FritzboxDataUpdateCoordinator(DataUpdateCoordinator[FritzboxCoordinatorDat
 
     configuration_url: str
 
-    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+    def __init__(
+        self, hass: HomeAssistant, entry: ConfigEntry, has_templates: bool
+    ) -> None:
         """Initialize the Fritzbox Smarthome device coordinator."""
         self.entry = entry
         self.fritz: Fritzhome = hass.data[DOMAIN][self.entry.entry_id][CONF_CONNECTIONS]
         self.configuration_url = self.fritz.get_prefixed_host()
+        self.has_templates = has_templates
+
         super().__init__(
             hass,
             LOGGER,
@@ -45,17 +49,19 @@ class FritzboxDataUpdateCoordinator(DataUpdateCoordinator[FritzboxCoordinatorDat
         """Update all fritzbox device data."""
         try:
             self.fritz.update_devices()
-            self.fritz.update_templates()
-        except requests.exceptions.ConnectionError as ex:
+            if self.has_templates:
+                self.fritz.update_templates()
+        except RequestConnectionError as ex:
             raise UpdateFailed from ex
-        except requests.exceptions.HTTPError:
+        except HTTPError:
             # If the device rebooted, login again
             try:
                 self.fritz.login()
             except LoginError as ex:
                 raise ConfigEntryAuthFailed from ex
             self.fritz.update_devices()
-            self.fritz.update_templates()
+            if self.has_templates:
+                self.fritz.update_templates()
 
         devices = self.fritz.get_devices()
         device_data = {}
@@ -75,10 +81,11 @@ class FritzboxDataUpdateCoordinator(DataUpdateCoordinator[FritzboxCoordinatorDat
 
             device_data[device.ain] = device
 
-        templates = self.fritz.get_templates()
         template_data = {}
-        for template in templates:
-            template_data[template.ain] = template
+        if self.has_templates:
+            templates = self.fritz.get_templates()
+            for template in templates:
+                template_data[template.ain] = template
 
         return FritzboxCoordinatorData(devices=device_data, templates=template_data)
 

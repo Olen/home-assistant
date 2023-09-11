@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from datetime import timedelta
 import logging
+from typing import Any
 
-from WazeRouteCalculator import WazeRouteCalculator, WRCError
+import httpx
+from pywaze.route_calculator import WazeRouteCalculator, WRCError
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -16,14 +18,13 @@ from homeassistant.const import (
     CONF_NAME,
     CONF_REGION,
     EVENT_HOMEASSISTANT_STARTED,
-    LENGTH_KILOMETERS,
-    LENGTH_MILES,
-    TIME_MINUTES,
+    UnitOfLength,
+    UnitOfTime,
 )
 from homeassistant.core import CoreState, HomeAssistant
-from homeassistant.helpers.device_registry import DeviceEntryType
-from homeassistant.helpers.entity import DeviceInfo
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.httpx_client import get_async_client
 from homeassistant.helpers.location import find_coordinates
 from homeassistant.util.unit_conversion import DistanceConverter
 
@@ -60,9 +61,8 @@ async def async_setup_entry(
     name = config_entry.data.get(CONF_NAME, DEFAULT_NAME)
 
     data = WazeTravelTimeData(
-        None,
-        None,
         region,
+        get_async_client(hass),
         config_entry,
     )
 
@@ -75,7 +75,7 @@ class WazeTravelTime(SensorEntity):
     """Representation of a Waze travel time sensor."""
 
     _attr_attribution = "Powered by Waze"
-    _attr_native_unit_of_measurement = TIME_MINUTES
+    _attr_native_unit_of_measurement = UnitOfTime.MINUTES
     _attr_device_class = SensorDeviceClass.DURATION
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_device_info = DeviceInfo(
@@ -85,7 +85,14 @@ class WazeTravelTime(SensorEntity):
         configuration_url="https://www.waze.com",
     )
 
-    def __init__(self, unique_id, name, origin, destination, waze_data):
+    def __init__(
+        self,
+        unique_id: str,
+        name: str,
+        origin: str,
+        destination: str,
+        waze_data: WazeTravelTimeData,
+    ) -> None:
         """Initialize the Waze travel time sensor."""
         self._attr_unique_id = unique_id
         self._waze_data = waze_data
@@ -113,7 +120,7 @@ class WazeTravelTime(SensorEntity):
         return None
 
     @property
-    def extra_state_attributes(self) -> dict | None:
+    def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return the state attributes of the last update."""
         if self._waze_data.duration is None:
             return None
@@ -126,33 +133,35 @@ class WazeTravelTime(SensorEntity):
             "destination": self._waze_data.destination,
         }
 
-    async def first_update(self, _=None):
+    async def first_update(self, _=None) -> None:
         """Run first update and write state."""
-        await self.hass.async_add_executor_job(self.update)
+        await self.async_update()
         self.async_write_ha_state()
 
-    def update(self) -> None:
+    async def async_update(self) -> None:
         """Fetch new state data for the sensor."""
         _LOGGER.debug("Fetching Route for %s", self._attr_name)
         self._waze_data.origin = find_coordinates(self.hass, self._origin)
         self._waze_data.destination = find_coordinates(self.hass, self._destination)
-        self._waze_data.update()
+        await self._waze_data.async_update()
 
 
 class WazeTravelTimeData:
     """WazeTravelTime Data object."""
 
-    def __init__(self, origin, destination, region, config_entry):
+    def __init__(
+        self, region: str, client: httpx.AsyncClient, config_entry: ConfigEntry
+    ) -> None:
         """Set up WazeRouteCalculator."""
-        self.origin = origin
-        self.destination = destination
-        self.region = region
         self.config_entry = config_entry
+        self.client = WazeRouteCalculator(region=region, client=client)
+        self.origin: str | None = None
+        self.destination: str | None = None
         self.duration = None
         self.distance = None
         self.route = None
 
-    def update(self):
+    async def async_update(self):
         """Update WazeRouteCalculator Sensor."""
         _LOGGER.debug(
             "Getting update for origin: %s destination: %s",
@@ -173,17 +182,17 @@ class WazeTravelTimeData:
             avoid_ferries = self.config_entry.options[CONF_AVOID_FERRIES]
             units = self.config_entry.options[CONF_UNITS]
 
+            routes = {}
             try:
-                params = WazeRouteCalculator(
+                routes = await self.client.calc_all_routes_info(
                     self.origin,
                     self.destination,
-                    self.region,
-                    vehicle_type,
-                    avoid_toll_roads,
-                    avoid_subscription_roads,
-                    avoid_ferries,
+                    vehicle_type=vehicle_type,
+                    avoid_toll_roads=avoid_toll_roads,
+                    avoid_subscription_roads=avoid_subscription_roads,
+                    avoid_ferries=avoid_ferries,
+                    real_time=realtime,
                 )
-                routes = params.calc_all_routes_info(real_time=realtime)
 
                 if incl_filter not in {None, ""}:
                     routes = {
@@ -210,7 +219,7 @@ class WazeTravelTimeData:
                 if units == IMPERIAL_UNITS:
                     # Convert to miles.
                     self.distance = DistanceConverter.convert(
-                        distance, LENGTH_KILOMETERS, LENGTH_MILES
+                        distance, UnitOfLength.KILOMETERS, UnitOfLength.MILES
                     )
                 else:
                     self.distance = distance

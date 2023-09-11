@@ -4,16 +4,16 @@ These APIs are the only documented way to interact with the bluetooth integratio
 """
 from __future__ import annotations
 
+import asyncio
 from asyncio import Future
 from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, cast
 
-import async_timeout
 from home_assistant_bluetooth import BluetoothServiceInfoBleak
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback as hass_callback
 
-from .base_scanner import BaseHaScanner
+from .base_scanner import BaseHaScanner, BluetoothScannerDevice
 from .const import DATA_MANAGER
 from .manager import BluetoothManager
 from .match import BluetoothCallbackMatcher
@@ -94,6 +94,14 @@ def async_ble_device_from_address(
 
 
 @hass_callback
+def async_scanner_devices_by_address(
+    hass: HomeAssistant, address: str, connectable: bool = True
+) -> list[BluetoothScannerDevice]:
+    """Return all discovered BluetoothScannerDevice for an address."""
+    return _get_manager(hass).async_scanner_devices_by_address(address, connectable)
+
+
+@hass_callback
 def async_address_present(
     hass: HomeAssistant, address: str, connectable: bool = True
 ) -> bool:
@@ -130,7 +138,7 @@ async def async_process_advertisements(
     timeout: int,
 ) -> BluetoothServiceInfoBleak:
     """Process advertisements until callback returns true or timeout expires."""
-    done: Future[BluetoothServiceInfoBleak] = Future()
+    done: Future[BluetoothServiceInfoBleak] = hass.loop.create_future()
 
     @hass_callback
     def _async_discovered_device(
@@ -144,7 +152,7 @@ async def async_process_advertisements(
     )
 
     try:
-        async with async_timeout.timeout(timeout):
+        async with asyncio.timeout(timeout):
             return await done
     finally:
         unload()
@@ -172,10 +180,15 @@ def async_rediscover_address(hass: HomeAssistant, address: str) -> None:
 
 @hass_callback
 def async_register_scanner(
-    hass: HomeAssistant, scanner: BaseHaScanner, connectable: bool
+    hass: HomeAssistant,
+    scanner: BaseHaScanner,
+    connectable: bool,
+    connection_slots: int | None = None,
 ) -> CALLBACK_TYPE:
     """Register a BleakScanner."""
-    return _get_manager(hass).async_register_scanner(scanner, connectable)
+    return _get_manager(hass).async_register_scanner(
+        scanner, connectable, connection_slots
+    )
 
 
 @hass_callback

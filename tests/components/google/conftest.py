@@ -20,6 +20,7 @@ from homeassistant.components.application_credentials import (
 from homeassistant.components.google import DOMAIN
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
+from homeassistant.util import dt as dt_util
 
 from tests.common import MockConfigEntry
 from tests.test_util.aiohttp import AiohttpClientMocker
@@ -68,7 +69,7 @@ def test_calendar_access_role() -> str:
 
 
 @pytest.fixture
-def test_api_calendar(calendar_access_role: str):
+def test_api_calendar(calendar_access_role: str) -> None:
     """Return a test calendar object used in API responses."""
     return {
         **TEST_API_CALENDAR,
@@ -121,7 +122,9 @@ def mock_calendars_yaml(
     calendars_config: list[dict[str, Any]],
 ) -> Generator[Mock, None, None]:
     """Fixture that prepares the google_calendars.yaml mocks."""
-    mocked_open_function = mock_open(read_data=yaml.dump(calendars_config))
+    mocked_open_function = mock_open(
+        read_data=yaml.dump(calendars_config) if calendars_config else None
+    )
     with patch("homeassistant.components.google.open", mocked_open_function):
         yield mocked_open_function
 
@@ -136,9 +139,7 @@ def token_scopes() -> list[str]:
 def token_expiry() -> datetime.datetime:
     """Expiration time for credentials used in the test."""
     # OAuth library returns an offset-naive timestamp
-    return datetime.datetime.fromtimestamp(
-        datetime.datetime.utcnow().timestamp()
-    ) + datetime.timedelta(hours=1)
+    return dt_util.utcnow().replace(tzinfo=None) + datetime.timedelta(hours=1)
 
 
 @pytest.fixture

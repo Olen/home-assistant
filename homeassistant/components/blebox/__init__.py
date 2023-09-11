@@ -12,7 +12,8 @@ from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.entity import DeviceInfo, Entity
+from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.entity import Entity
 
 from .const import DEFAULT_SETUP_TIMEOUT, DOMAIN, PRODUCT
 
@@ -83,6 +84,7 @@ class BleBoxEntity(Entity, Generic[_FeatureT]):
             model=product.model,
             name=product.name,
             sw_version=product.firmware_version,
+            configuration_url=f"http://{product.address}",
         )
 
     async def async_update(self) -> None:

@@ -112,8 +112,10 @@ async def async_setup_platform(
 
         else:
             _LOGGER.warning(
-                "Ignoring: %s (%s), id=%s, name=%s: unknown/invalid zone type, "
-                "report as an issue if you feel this zone type should be supported",
+                (
+                    "Ignoring: %s (%s), id=%s, name=%s: unknown/invalid zone type, "
+                    "report as an issue if you feel this zone type should be supported"
+                ),
                 zone.zoneType,
                 zone.modelType,
                 zone.zoneId,
@@ -129,7 +131,7 @@ class EvoClimateEntity(EvoDevice, ClimateEntity):
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
 
     @property
-    def hvac_modes(self) -> list[str]:
+    def hvac_modes(self) -> list[HVACMode]:
         """Return a list of available hvac operation modes."""
         return list(HA_HVAC_TO_TCS)
 
@@ -189,7 +191,7 @@ class EvoZone(EvoChild, EvoClimateEntity):
         )
 
     @property
-    def hvac_mode(self) -> str:
+    def hvac_mode(self) -> HVACMode:
         """Return the current operating mode of a Zone."""
         if self._evo_tcs.systemModeStatus["mode"] in (EVO_AWAY, EVO_HEATOFF):
             return HVACMode.AUTO
@@ -354,7 +356,7 @@ class EvoController(EvoClimateEntity):
         )
 
     @property
-    def hvac_mode(self) -> str:
+    def hvac_mode(self) -> HVACMode:
         """Return the current operating mode of a Controller."""
         tcs_mode = self._evo_tcs.systemModeStatus["mode"]
         return HVACMode.OFF if tcs_mode == EVO_HEATOFF else HVACMode.HEAT

@@ -14,10 +14,12 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import NINADataUpdateCoordinator
 from .const import (
+    ATTR_AFFECTED_AREAS,
     ATTR_DESCRIPTION,
     ATTR_EXPIRES,
     ATTR_HEADLINE,
     ATTR_ID,
+    ATTR_RECOMMENDED_ACTIONS,
     ATTR_SENDER,
     ATTR_SENT,
     ATTR_SEVERITY,
@@ -72,7 +74,7 @@ class NINAMessage(CoordinatorEntity[NINADataUpdateCoordinator], BinarySensorEnti
     @property
     def is_on(self) -> bool:
         """Return the state of the sensor."""
-        if not len(self.coordinator.data[self._region]) > self._warning_index:
+        if len(self.coordinator.data[self._region]) <= self._warning_index:
             return False
 
         data = self.coordinator.data[self._region][self._warning_index]
@@ -92,6 +94,8 @@ class NINAMessage(CoordinatorEntity[NINADataUpdateCoordinator], BinarySensorEnti
             ATTR_DESCRIPTION: data.description,
             ATTR_SENDER: data.sender,
             ATTR_SEVERITY: data.severity,
+            ATTR_RECOMMENDED_ACTIONS: data.recommended_actions,
+            ATTR_AFFECTED_AREAS: data.affected_areas,
             ATTR_ID: data.id,
             ATTR_SENT: data.sent,
             ATTR_START: data.start,

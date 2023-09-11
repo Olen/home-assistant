@@ -16,15 +16,17 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_IDENTIFIERS, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
 from .config_flow import normalize_hkid
 from .connection import HKDevice
-from .const import KNOWN_DEVICES
+from .const import DOMAIN, KNOWN_DEVICES
 from .utils import async_get_controller
 
 _LOGGER = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -97,9 +99,11 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
         await controller.remove_pairing(hkid)
     except aiohomekit.AccessoryDisconnectedError:
         _LOGGER.warning(
-            "Accessory %s was removed from HomeAssistant but was not reachable "
-            "to properly unpair. It may need resetting before you can use it with "
-            "HomeKit again",
+            (
+                "Accessory %s was removed from HomeAssistant but was not reachable "
+                "to properly unpair. It may need resetting before you can use it with "
+                "HomeKit again"
+            ),
             entry.title,
         )
 

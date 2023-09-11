@@ -1,4 +1,9 @@
-"""Support for Legacy MQTT vacuum."""
+"""Support for Legacy MQTT vacuum.
+
+The legacy schema for MQTT vacuum was deprecated with HA Core 2023.8.0
+and is will be removed with HA Core 2024.2.0
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -8,7 +13,6 @@ import voluptuous as vol
 
 from homeassistant.components.vacuum import (
     ATTR_STATUS,
-    DOMAIN as VACUUM_DOMAIN,
     ENTITY_ID_FORMAT,
     VacuumEntity,
     VacuumEntityFeature,
@@ -26,7 +30,7 @@ from .. import subscription
 from ..config import MQTT_BASE_SCHEMA
 from ..const import CONF_COMMAND_TOPIC, CONF_ENCODING, CONF_QOS, CONF_RETAIN
 from ..debug_info import log_messages
-from ..mixins import MQTT_ENTITY_COMMON_SCHEMA, MqttEntity, warn_for_legacy_schema
+from ..mixins import MQTT_ENTITY_COMMON_SCHEMA, MqttEntity
 from ..models import (
     MqttValueTemplate,
     PayloadSentinel,
@@ -127,7 +131,7 @@ PLATFORM_SCHEMA_LEGACY_MODERN = (
             ),
             vol.Inclusive(CONF_FAN_SPEED_TEMPLATE, "fan_speed"): cv.template,
             vol.Inclusive(CONF_FAN_SPEED_TOPIC, "fan_speed"): valid_publish_topic,
-            vol.Optional(CONF_NAME, default=DEFAULT_NAME): cv.string,
+            vol.Optional(CONF_NAME): vol.Any(cv.string, None),
             vol.Optional(
                 CONF_PAYLOAD_CLEAN_SPOT, default=DEFAULT_PAYLOAD_CLEAN_SPOT
             ): cv.string,
@@ -158,12 +162,6 @@ PLATFORM_SCHEMA_LEGACY_MODERN = (
     )
     .extend(MQTT_ENTITY_COMMON_SCHEMA.schema)
     .extend(MQTT_VACUUM_SCHEMA.schema)
-)
-
-# Configuring MQTT Vacuums under the vacuum platform key was deprecated in HA Core 2022.6
-PLATFORM_SCHEMA_LEGACY = vol.All(
-    cv.PLATFORM_SCHEMA.extend(PLATFORM_SCHEMA_LEGACY_MODERN.schema),
-    warn_for_legacy_schema(VACUUM_DOMAIN),
 )
 
 DISCOVERY_SCHEMA_LEGACY = PLATFORM_SCHEMA_LEGACY_MODERN.extend(
@@ -217,9 +215,11 @@ async def async_setup_entity_legacy(
 class MqttVacuum(MqttEntity, VacuumEntity):
     """Representation of a MQTT-controlled legacy vacuum."""
 
+    _default_name = DEFAULT_NAME
     _entity_id_format = ENTITY_ID_FORMAT
     _attributes_extra_blocked = MQTT_LEGACY_VACUUM_ATTRIBUTES_BLOCKED
 
+    _command_topic: str | None
     _encoding: str | None
     _qos: bool
     _retain: bool
@@ -412,16 +412,17 @@ class MqttVacuum(MqttEntity, VacuumEntity):
     def battery_icon(self) -> str:
         """Return the battery icon for the vacuum cleaner.
 
-        No need to check VacuumEntityFeature.BATTERY, this won't be called if battery_level is None.
+        No need to check VacuumEntityFeature.BATTERY, this won't be called if
+        battery_level is None.
         """
         return icon_for_battery_level(
             battery_level=self.battery_level, charging=self._charging
         )
 
     async def _async_publish_command(self, feature: VacuumEntityFeature) -> None:
-        """Check for a missing feature or command topic."""
+        """Publish a command."""
 
-        if self._command_topic is None or self.supported_features & feature == 0:
+        if self._command_topic is None:
             return
 
         await self.async_publish(

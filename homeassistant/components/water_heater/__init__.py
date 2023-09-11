@@ -21,8 +21,7 @@ from homeassistant.const import (
     SERVICE_TURN_ON,
     STATE_OFF,
     STATE_ON,
-    TEMP_CELSIUS,
-    TEMP_FAHRENHEIT,
+    UnitOfTemperature,
 )
 from homeassistant.core import HomeAssistant, ServiceCall
 import homeassistant.helpers.config_validation as cv
@@ -62,6 +61,7 @@ class WaterHeaterEntityFeature(IntFlag):
     TARGET_TEMPERATURE = 1
     OPERATION_MODE = 2
     AWAY_MODE = 4
+    ON_OFF = 8
 
 
 # These SUPPORT_* constants are deprecated as of Home Assistant 2022.5.
@@ -117,6 +117,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     )
     await component.async_setup(config)
 
+    component.async_register_entity_service(
+        SERVICE_TURN_ON, {}, "async_turn_on", [WaterHeaterEntityFeature.ON_OFF]
+    )
+    component.async_register_entity_service(
+        SERVICE_TURN_OFF, {}, "async_turn_off", [WaterHeaterEntityFeature.ON_OFF]
+    )
     component.async_register_entity_service(
         SERVICE_SET_AWAY_MODE, SET_AWAY_MODE_SCHEMA, async_service_away_mode
     )
@@ -184,7 +190,7 @@ class WaterHeaterEntity(Entity):
         """Return the precision of the system."""
         if hasattr(self, "_attr_precision"):
             return self._attr_precision
-        if self.hass.config.units.temperature_unit == TEMP_CELSIUS:
+        if self.hass.config.units.temperature_unit == UnitOfTemperature.CELSIUS:
             return PRECISION_TENTHS
         return PRECISION_WHOLE
 
@@ -295,6 +301,22 @@ class WaterHeaterEntity(Entity):
             ft.partial(self.set_temperature, **kwargs)
         )
 
+    def turn_on(self, **kwargs: Any) -> None:
+        """Turn the water heater on."""
+        raise NotImplementedError()
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the water heater on."""
+        await self.hass.async_add_executor_job(ft.partial(self.turn_on, **kwargs))
+
+    def turn_off(self, **kwargs: Any) -> None:
+        """Turn the water heater off."""
+        raise NotImplementedError()
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the water heater off."""
+        await self.hass.async_add_executor_job(ft.partial(self.turn_off, **kwargs))
+
     def set_operation_mode(self, operation_mode: str) -> None:
         """Set new target operation mode."""
         raise NotImplementedError()
@@ -325,7 +347,7 @@ class WaterHeaterEntity(Entity):
         if hasattr(self, "_attr_min_temp"):
             return self._attr_min_temp
         return TemperatureConverter.convert(
-            DEFAULT_MIN_TEMP, TEMP_FAHRENHEIT, self.temperature_unit
+            DEFAULT_MIN_TEMP, UnitOfTemperature.FAHRENHEIT, self.temperature_unit
         )
 
     @property
@@ -334,7 +356,7 @@ class WaterHeaterEntity(Entity):
         if hasattr(self, "_attr_max_temp"):
             return self._attr_max_temp
         return TemperatureConverter.convert(
-            DEFAULT_MAX_TEMP, TEMP_FAHRENHEIT, self.temperature_unit
+            DEFAULT_MAX_TEMP, UnitOfTemperature.FAHRENHEIT, self.temperature_unit
         )
 
     @property

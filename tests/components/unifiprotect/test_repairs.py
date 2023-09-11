@@ -1,5 +1,4 @@
 """Test repairs for unifiprotect."""
-
 from __future__ import annotations
 
 from copy import copy
@@ -20,13 +19,15 @@ from homeassistant.core import HomeAssistant
 
 from .utils import MockUFPFixture, init_entry
 
+from tests.typing import ClientSessionGenerator, WebSocketGenerator
+
 
 async def test_ea_warning_ignore(
     hass: HomeAssistant,
     ufp: MockUFPFixture,
-    hass_client,
-    hass_ws_client,
-):
+    hass_client: ClientSessionGenerator,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
     """Test EA warning is created if using prerelease version of Protect."""
 
     version = ufp.api.bootstrap.nvr.version
@@ -76,9 +77,9 @@ async def test_ea_warning_ignore(
 async def test_ea_warning_fix(
     hass: HomeAssistant,
     ufp: MockUFPFixture,
-    hass_client,
-    hass_ws_client,
-):
+    hass_client: ClientSessionGenerator,
+    hass_ws_client: WebSocketGenerator,
+) -> None:
     """Test EA warning is created if using prerelease version of Protect."""
 
     version = ufp.api.bootstrap.nvr.version

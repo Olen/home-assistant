@@ -5,20 +5,24 @@ import asyncio
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, cast
+from typing import Any, Generic, TypeVar, cast
 
 import aioshelly
 from aioshelly.ble import async_ensure_ble_enabled, async_stop_scanner
-from aioshelly.block_device import BlockDevice
+from aioshelly.block_device import BlockDevice, BlockUpdateType
 from aioshelly.exceptions import DeviceConnectionError, InvalidAuthError, RpcCallError
-from aioshelly.rpc_device import RpcDevice, UpdateType
+from aioshelly.rpc_device import RpcDevice, RpcUpdateType
 from awesomeversion import AwesomeVersion
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryState
 from homeassistant.const import ATTR_DEVICE_ID, CONF_HOST, EVENT_HOMEASSISTANT_STOP
 from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
-from homeassistant.helpers import device_registry
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.debounce import Debouncer
+from homeassistant.helpers.device_registry import (
+    CONNECTION_NETWORK_MAC,
+    async_get as dr_async_get,
+)
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .bluetooth import async_connect_scanner
@@ -38,7 +42,13 @@ from .const import (
     EVENT_SHELLY_CLICK,
     INPUTS_EVENTS_DICT,
     LOGGER,
+    MAX_PUSH_UPDATE_FAILURES,
     MODELS_SUPPORTING_LIGHT_EFFECTS,
+    OTA_BEGIN,
+    OTA_ERROR,
+    OTA_PROGRESS,
+    OTA_SUCCESS,
+    PUSH_UPDATE_ISSUE_ID,
     REST_SENSORS_UPDATE_INTERVAL,
     RPC_INPUTS_EVENTS_TYPES,
     RPC_RECONNECT_INTERVAL,
@@ -48,12 +58,9 @@ from .const import (
     UPDATE_PERIOD_MULTIPLIER,
     BLEScannerMode,
 )
-from .utils import (
-    device_update_info,
-    get_block_device_name,
-    get_rpc_device_name,
-    get_rpc_device_wakeup_period,
-)
+from .utils import device_update_info, get_rpc_device_wakeup_period
+
+_DeviceT = TypeVar("_DeviceT", bound="BlockDevice|RpcDevice")
 
 
 @dataclass
@@ -72,34 +79,23 @@ def get_entry_data(hass: HomeAssistant) -> dict[str, ShellyEntryData]:
     return cast(dict[str, ShellyEntryData], hass.data[DOMAIN][DATA_CONFIG_ENTRY])
 
 
-class ShellyBlockCoordinator(DataUpdateCoordinator):
-    """Coordinator for a Shelly block based device."""
+class ShellyCoordinatorBase(DataUpdateCoordinator[None], Generic[_DeviceT]):
+    """Coordinator for a Shelly device."""
 
     def __init__(
-        self, hass: HomeAssistant, entry: ConfigEntry, device: BlockDevice
+        self,
+        hass: HomeAssistant,
+        entry: ConfigEntry,
+        device: _DeviceT,
+        update_interval: float,
     ) -> None:
-        """Initialize the Shelly block device coordinator."""
-        self.device_id: str | None = None
-
-        if sleep_period := entry.data[CONF_SLEEP_PERIOD]:
-            update_interval = SLEEP_PERIOD_MULTIPLIER * sleep_period
-        else:
-            update_interval = (
-                UPDATE_PERIOD_MULTIPLIER * device.settings["coiot"]["update_period"]
-            )
-
-        device_name = (
-            get_block_device_name(device) if device.initialized else entry.title
-        )
-        super().__init__(
-            hass,
-            LOGGER,
-            name=device_name,
-            update_interval=timedelta(seconds=update_interval),
-        )
-        self.hass = hass
+        """Initialize the Shelly device coordinator."""
         self.entry = entry
         self.device = device
+        self.device_id: str | None = None
+        device_name = device.name if device.initialized else entry.title
+        interval_td = timedelta(seconds=update_interval)
+        super().__init__(hass, LOGGER, name=device_name, update_interval=interval_td)
 
         self._debounced_reload: Debouncer[Coroutine[Any, Any, None]] = Debouncer(
             hass,
@@ -108,24 +104,79 @@ class ShellyBlockCoordinator(DataUpdateCoordinator):
             immediate=False,
             function=self._async_reload_entry,
         )
-        entry.async_on_unload(self._debounced_reload.async_cancel)
+        entry.async_on_unload(self._debounced_reload.async_shutdown)
+
+    @property
+    def model(self) -> str:
+        """Model of the device."""
+        return cast(str, self.entry.data["model"])
+
+    @property
+    def mac(self) -> str:
+        """Mac address of the device."""
+        return cast(str, self.entry.unique_id)
+
+    @property
+    def sw_version(self) -> str:
+        """Firmware version of the device."""
+        return self.device.firmware_version if self.device.initialized else ""
+
+    @property
+    def sleep_period(self) -> int:
+        """Sleep period of the device."""
+        return self.entry.data.get(CONF_SLEEP_PERIOD, 0)
+
+    def async_setup(self) -> None:
+        """Set up the coordinator."""
+        dev_reg = dr_async_get(self.hass)
+        device_entry = dev_reg.async_get_or_create(
+            config_entry_id=self.entry.entry_id,
+            name=self.name,
+            connections={(CONNECTION_NETWORK_MAC, self.mac)},
+            manufacturer="Shelly",
+            model=aioshelly.const.MODEL_NAMES.get(self.model, self.model),
+            sw_version=self.sw_version,
+            hw_version=f"gen{self.device.gen} ({self.model})",
+            configuration_url=f"http://{self.entry.data[CONF_HOST]}",
+        )
+        self.device_id = device_entry.id
+
+    async def _async_reload_entry(self) -> None:
+        """Reload entry."""
+        self._debounced_reload.async_cancel()
+        LOGGER.debug("Reloading entry %s", self.name)
+        await self.hass.config_entries.async_reload(self.entry.entry_id)
+
+
+class ShellyBlockCoordinator(ShellyCoordinatorBase[BlockDevice]):
+    """Coordinator for a Shelly block based device."""
+
+    def __init__(
+        self, hass: HomeAssistant, entry: ConfigEntry, device: BlockDevice
+    ) -> None:
+        """Initialize the Shelly block device coordinator."""
+        self.entry = entry
+        if self.sleep_period:
+            update_interval = SLEEP_PERIOD_MULTIPLIER * self.sleep_period
+        else:
+            update_interval = (
+                UPDATE_PERIOD_MULTIPLIER * device.settings["coiot"]["update_period"]
+            )
+        super().__init__(hass, entry, device, update_interval)
+
         self._last_cfg_changed: int | None = None
         self._last_mode: str | None = None
         self._last_effect: int | None = None
+        self._last_input_events_count: dict = {}
+        self._last_target_temp: float | None = None
+        self._push_update_failures: int = 0
 
         entry.async_on_unload(
             self.async_add_listener(self._async_device_updates_handler)
         )
-        self._last_input_events_count: dict = {}
-
         entry.async_on_unload(
             hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, self._handle_ha_stop)
         )
-
-    async def _async_reload_entry(self) -> None:
-        """Reload entry."""
-        LOGGER.debug("Reloading entry %s", self.name)
-        await self.hass.config_entries.async_reload(self.entry.entry_id)
 
     @callback
     def _async_device_updates_handler(self) -> None:
@@ -151,6 +202,11 @@ class ShellyBlockCoordinator(DataUpdateCoordinator):
         for block in self.device.blocks:
             if block.type == "device":
                 cfg_changed = block.cfgChanged
+
+            # Shelly TRV sends information about changing the configuration for no
+            # reason, reloading the config entry is not needed for it.
+            if self.model == "SHTRV-01":
+                self._last_cfg_changed = None
 
             # For dual mode bulbs ignore change if it is due to mode/effect change
             if self.model in DUAL_MODE_LIGHT_MODELS:
@@ -208,10 +264,10 @@ class ShellyBlockCoordinator(DataUpdateCoordinator):
 
     async def _async_update_data(self) -> None:
         """Fetch data."""
-        if sleep_period := self.entry.data.get(CONF_SLEEP_PERIOD):
+        if self.sleep_period:
             # Sleeping device, no point polling it, just mark it unavailable
             raise UpdateFailed(
-                f"Sleeping device did not update within {sleep_period} seconds interval"
+                f"Sleeping device did not update within {self.sleep_period} seconds interval"
             )
 
         LOGGER.debug("Polling Shelly Block Device - %s", self.name)
@@ -224,36 +280,47 @@ class ShellyBlockCoordinator(DataUpdateCoordinator):
         else:
             device_update_info(self.hass, self.device, self.entry)
 
-    @property
-    def model(self) -> str:
-        """Model of the device."""
-        return cast(str, self.entry.data["model"])
-
-    @property
-    def mac(self) -> str:
-        """Mac address of the device."""
-        return cast(str, self.entry.unique_id)
-
-    @property
-    def sw_version(self) -> str:
-        """Firmware version of the device."""
-        return self.device.firmware_version if self.device.initialized else ""
+    @callback
+    def _async_handle_update(
+        self, device_: BlockDevice, update_type: BlockUpdateType
+    ) -> None:
+        """Handle device update."""
+        if update_type == BlockUpdateType.COAP_PERIODIC:
+            self._push_update_failures = 0
+            ir.async_delete_issue(
+                self.hass,
+                DOMAIN,
+                PUSH_UPDATE_ISSUE_ID.format(unique=self.mac),
+            )
+        elif update_type == BlockUpdateType.COAP_REPLY:
+            self._push_update_failures += 1
+            if self._push_update_failures == MAX_PUSH_UPDATE_FAILURES:
+                LOGGER.debug(
+                    "Creating issue %s", PUSH_UPDATE_ISSUE_ID.format(unique=self.mac)
+                )
+                ir.async_create_issue(
+                    self.hass,
+                    DOMAIN,
+                    PUSH_UPDATE_ISSUE_ID.format(unique=self.mac),
+                    is_fixable=False,
+                    is_persistent=False,
+                    severity=ir.IssueSeverity.ERROR,
+                    learn_more_url="https://www.home-assistant.io/integrations/shelly/#shelly-device-configuration-generation-1",
+                    translation_key="push_update_failure",
+                    translation_placeholders={
+                        "device_name": self.entry.title,
+                        "ip_address": self.device.ip_address,
+                    },
+                )
+        LOGGER.debug(
+            "Push update failures for %s: %s", self.name, self._push_update_failures
+        )
+        self.async_set_updated_data(None)
 
     def async_setup(self) -> None:
         """Set up the coordinator."""
-        dev_reg = device_registry.async_get(self.hass)
-        entry = dev_reg.async_get_or_create(
-            config_entry_id=self.entry.entry_id,
-            name=self.name,
-            connections={(device_registry.CONNECTION_NETWORK_MAC, self.mac)},
-            manufacturer="Shelly",
-            model=aioshelly.const.MODEL_NAMES.get(self.model, self.model),
-            sw_version=self.sw_version,
-            hw_version=f"gen{self.device.gen} ({self.model})",
-            configuration_url=f"http://{self.entry.data[CONF_HOST]}",
-        )
-        self.device_id = entry.id
-        self.device.subscribe_updates(self.async_set_updated_data)
+        super().async_setup()
+        self.device.subscribe_updates(self._async_handle_update)
 
     def shutdown(self) -> None:
         """Shutdown the coordinator."""
@@ -266,13 +333,14 @@ class ShellyBlockCoordinator(DataUpdateCoordinator):
         self.shutdown()
 
 
-class ShellyRestCoordinator(DataUpdateCoordinator):
+class ShellyRestCoordinator(ShellyCoordinatorBase[BlockDevice]):
     """Coordinator for a Shelly REST device."""
 
     def __init__(
         self, hass: HomeAssistant, device: BlockDevice, entry: ConfigEntry
     ) -> None:
         """Initialize the Shelly REST device coordinator."""
+        update_interval = REST_SENSORS_UPDATE_INTERVAL
         if (
             device.settings["device"]["type"]
             in BATTERY_DEVICES_WITH_PERMANENT_CONNECTION
@@ -280,17 +348,7 @@ class ShellyRestCoordinator(DataUpdateCoordinator):
             update_interval = (
                 SLEEP_PERIOD_MULTIPLIER * device.settings["coiot"]["update_period"]
             )
-        else:
-            update_interval = REST_SENSORS_UPDATE_INTERVAL
-
-        super().__init__(
-            hass,
-            LOGGER,
-            name=get_block_device_name(device),
-            update_interval=timedelta(seconds=update_interval),
-        )
-        self.device = device
-        self.entry = entry
+        super().__init__(hass, entry, device, update_interval)
 
     async def _async_update_data(self) -> None:
         """Fetch data."""
@@ -311,64 +369,38 @@ class ShellyRestCoordinator(DataUpdateCoordinator):
         else:
             device_update_info(self.hass, self.device, self.entry)
 
-    @property
-    def mac(self) -> str:
-        """Mac address of the device."""
-        return cast(str, self.device.settings["device"]["mac"])
 
-
-class ShellyRpcCoordinator(DataUpdateCoordinator):
+class ShellyRpcCoordinator(ShellyCoordinatorBase[RpcDevice]):
     """Coordinator for a Shelly RPC based device."""
 
     def __init__(
         self, hass: HomeAssistant, entry: ConfigEntry, device: RpcDevice
     ) -> None:
         """Initialize the Shelly RPC device coordinator."""
-        self.device_id: str | None = None
-
-        if sleep_period := entry.data[CONF_SLEEP_PERIOD]:
-            update_interval = SLEEP_PERIOD_MULTIPLIER * sleep_period
+        self.entry = entry
+        if self.sleep_period:
+            update_interval = SLEEP_PERIOD_MULTIPLIER * self.sleep_period
         else:
             update_interval = RPC_RECONNECT_INTERVAL
-        device_name = get_rpc_device_name(device) if device.initialized else entry.title
-        super().__init__(
-            hass,
-            LOGGER,
-            name=device_name,
-            update_interval=timedelta(seconds=update_interval),
-        )
-        self.entry = entry
-        self.device = device
-        self.connected = False
+        super().__init__(hass, entry, device, update_interval)
 
+        self.connected = False
         self._disconnected_callbacks: list[CALLBACK_TYPE] = []
         self._connection_lock = asyncio.Lock()
         self._event_listeners: list[Callable[[dict[str, Any]], None]] = []
-        self._debounced_reload: Debouncer[Coroutine[Any, Any, None]] = Debouncer(
-            hass,
-            LOGGER,
-            cooldown=ENTRY_RELOAD_COOLDOWN,
-            immediate=False,
-            function=self._async_reload_entry,
-        )
-        entry.async_on_unload(self._debounced_reload.async_cancel)
+        self._ota_event_listeners: list[Callable[[dict[str, Any]], None]] = []
+
         entry.async_on_unload(
             hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, self._handle_ha_stop)
         )
         entry.async_on_unload(entry.add_update_listener(self._async_update_listener))
-
-    async def _async_reload_entry(self) -> None:
-        """Reload entry."""
-        self._debounced_reload.async_cancel()
-        LOGGER.debug("Reloading entry %s", self.name)
-        await self.hass.config_entries.async_reload(self.entry.entry_id)
 
     def update_sleep_period(self) -> bool:
         """Check device sleep period & update if changed."""
         if (
             not self.device.initialized
             or not (wakeup_period := get_rpc_device_wakeup_period(self.device.status))
-            or wakeup_period == self.entry.data.get(CONF_SLEEP_PERIOD)
+            or wakeup_period == self.sleep_period
         ):
             return False
 
@@ -380,6 +412,19 @@ class ShellyRpcCoordinator(DataUpdateCoordinator):
         self.update_interval = timedelta(seconds=update_interval)
 
         return True
+
+    @callback
+    def async_subscribe_ota_events(
+        self, ota_event_callback: Callable[[dict[str, Any]], None]
+    ) -> CALLBACK_TYPE:
+        """Subscribe to OTA events."""
+
+        def _unsubscribe() -> None:
+            self._ota_event_listeners.remove(ota_event_callback)
+
+        self._ota_event_listeners.append(ota_event_callback)
+
+        return _unsubscribe
 
     @callback
     def async_subscribe_events(
@@ -434,16 +479,19 @@ class ShellyRpcCoordinator(DataUpdateCoordinator):
                         ATTR_GENERATION: 2,
                     },
                 )
+            elif event_type in (OTA_BEGIN, OTA_ERROR, OTA_PROGRESS, OTA_SUCCESS):
+                for event_callback in self._ota_event_listeners:
+                    event_callback(event)
 
     async def _async_update_data(self) -> None:
         """Fetch data."""
         if self.update_sleep_period():
             return
 
-        if sleep_period := self.entry.data.get(CONF_SLEEP_PERIOD):
+        if self.sleep_period:
             # Sleeping device, no point polling it, just mark it unavailable
             raise UpdateFailed(
-                f"Sleeping device did not update within {sleep_period} seconds interval"
+                f"Sleeping device did not update within {self.sleep_period} seconds interval"
             )
         if self.device.connected:
             return
@@ -457,28 +505,21 @@ class ShellyRpcCoordinator(DataUpdateCoordinator):
         except InvalidAuthError:
             self.entry.async_start_reauth(self.hass)
 
-    @property
-    def model(self) -> str:
-        """Model of the device."""
-        return cast(str, self.entry.data["model"])
-
-    @property
-    def mac(self) -> str:
-        """Mac address of the device."""
-        return cast(str, self.entry.unique_id)
-
-    @property
-    def sw_version(self) -> str:
-        """Firmware version of the device."""
-        return self.device.firmware_version if self.device.initialized else ""
-
     async def _async_disconnected(self) -> None:
         """Handle device disconnected."""
+        # Sleeping devices send data and disconnect
+        # There are no disconnect events for sleeping devices
+        if self.sleep_period:
+            return
+
         async with self._connection_lock:
             if not self.connected:  # Already disconnected
                 return
             self.connected = False
             self._async_run_disconnected_events()
+        # Try to reconnect right away if hass is not stopping
+        if not self.hass.is_stopping:
+            await self.async_request_refresh()
 
     @callback
     def _async_run_disconnected_events(self) -> None:
@@ -505,7 +546,8 @@ class ShellyRpcCoordinator(DataUpdateCoordinator):
         This will be executed on connect or when the config entry
         is updated.
         """
-        await self._async_connect_ble_scanner()
+        if not self.sleep_period:
+            await self._async_connect_ble_scanner()
 
     async def _async_connect_ble_scanner(self) -> None:
         """Connect BLE scanner."""
@@ -532,31 +574,23 @@ class ShellyRpcCoordinator(DataUpdateCoordinator):
         )
 
     @callback
-    def _async_handle_update(self, device_: RpcDevice, update_type: UpdateType) -> None:
+    def _async_handle_update(
+        self, device_: RpcDevice, update_type: RpcUpdateType
+    ) -> None:
         """Handle device update."""
-        if update_type is UpdateType.INITIALIZED:
+        if update_type is RpcUpdateType.INITIALIZED:
             self.hass.async_create_task(self._async_connected())
-        elif update_type is UpdateType.DISCONNECTED:
+            self.async_set_updated_data(None)
+        elif update_type is RpcUpdateType.DISCONNECTED:
             self.hass.async_create_task(self._async_disconnected())
-        elif update_type is UpdateType.STATUS:
-            self.async_set_updated_data(self.device)
-        elif update_type is UpdateType.EVENT and (event := self.device.event):
+        elif update_type is RpcUpdateType.STATUS:
+            self.async_set_updated_data(None)
+        elif update_type is RpcUpdateType.EVENT and (event := self.device.event):
             self._async_device_event_handler(event)
 
     def async_setup(self) -> None:
         """Set up the coordinator."""
-        dev_reg = device_registry.async_get(self.hass)
-        entry = dev_reg.async_get_or_create(
-            config_entry_id=self.entry.entry_id,
-            name=self.name,
-            connections={(device_registry.CONNECTION_NETWORK_MAC, self.mac)},
-            manufacturer="Shelly",
-            model=aioshelly.const.MODEL_NAMES.get(self.model, self.model),
-            sw_version=self.sw_version,
-            hw_version=f"gen{self.device.gen} ({self.model})",
-            configuration_url=f"http://{self.entry.data[CONF_HOST]}",
-        )
-        self.device_id = entry.id
+        super().async_setup()
         self.device.subscribe_updates(self._async_handle_update)
         if self.device.initialized:
             # If we are already initialized, we are connected
@@ -565,7 +599,10 @@ class ShellyRpcCoordinator(DataUpdateCoordinator):
     async def shutdown(self) -> None:
         """Shutdown the coordinator."""
         if self.device.connected:
-            await async_stop_scanner(self.device)
+            try:
+                await async_stop_scanner(self.device)
+            except InvalidAuthError:
+                self.entry.async_start_reauth(self.hass)
         await self.device.shutdown()
         await self._async_disconnected()
 
@@ -575,24 +612,14 @@ class ShellyRpcCoordinator(DataUpdateCoordinator):
         await self.shutdown()
 
 
-class ShellyRpcPollingCoordinator(DataUpdateCoordinator):
+class ShellyRpcPollingCoordinator(ShellyCoordinatorBase[RpcDevice]):
     """Polling coordinator for a Shelly RPC based device."""
 
     def __init__(
         self, hass: HomeAssistant, entry: ConfigEntry, device: RpcDevice
     ) -> None:
         """Initialize the RPC polling coordinator."""
-        self.device_id: str | None = None
-
-        device_name = get_rpc_device_name(device) if device.initialized else entry.title
-        super().__init__(
-            hass,
-            LOGGER,
-            name=device_name,
-            update_interval=timedelta(seconds=RPC_SENSORS_POLLING_INTERVAL),
-        )
-        self.entry = entry
-        self.device = device
+        super().__init__(hass, entry, device, RPC_SENSORS_POLLING_INTERVAL)
 
     async def _async_update_data(self) -> None:
         """Fetch data."""
@@ -607,17 +634,12 @@ class ShellyRpcPollingCoordinator(DataUpdateCoordinator):
         except InvalidAuthError:
             self.entry.async_start_reauth(self.hass)
 
-    @property
-    def mac(self) -> str:
-        """Mac address of the device."""
-        return cast(str, self.entry.unique_id)
-
 
 def get_block_coordinator_by_device_id(
     hass: HomeAssistant, device_id: str
 ) -> ShellyBlockCoordinator | None:
     """Get a Shelly block device coordinator for the given device id."""
-    dev_reg = device_registry.async_get(hass)
+    dev_reg = dr_async_get(hass)
     if device := dev_reg.async_get(device_id):
         for config_entry in device.config_entries:
             if not (entry_data := get_entry_data(hass).get(config_entry)):
@@ -633,7 +655,7 @@ def get_rpc_coordinator_by_device_id(
     hass: HomeAssistant, device_id: str
 ) -> ShellyRpcCoordinator | None:
     """Get a Shelly RPC device coordinator for the given device id."""
-    dev_reg = device_registry.async_get(hass)
+    dev_reg = dr_async_get(hass)
     if device := dev_reg.async_get(device_id):
         for config_entry in device.config_entries:
             if not (entry_data := get_entry_data(hass).get(config_entry)):
@@ -643,3 +665,15 @@ def get_rpc_coordinator_by_device_id(
                 return coordinator
 
     return None
+
+
+async def async_reconnect_soon(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Try to reconnect soon."""
+    if (
+        not entry.data.get(CONF_SLEEP_PERIOD)
+        and not hass.is_stopping
+        and entry.state == ConfigEntryState.LOADED
+        and (entry_data := get_entry_data(hass).get(entry.entry_id))
+        and (coordinator := entry_data.rpc)
+    ):
+        hass.async_create_task(coordinator.async_request_refresh())
