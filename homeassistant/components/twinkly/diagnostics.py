@@ -7,37 +7,34 @@ from homeassistant.components.diagnostics import async_redact_data
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_IP_ADDRESS, CONF_MAC
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import entity_registry as er
+
+from .const import DATA_DEVICE_INFO
 
 TO_REDACT = [CONF_HOST, CONF_IP_ADDRESS, CONF_MAC]
+DOMAIN = "light"
+PLATFORM = "twinkly"
 
 
 async def async_get_config_entry_diagnostics(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> dict[str, Any]:
     """Return diagnostics for a Twinkly config entry."""
-
+    attributes = None
+    state = None
     entity_registry = er.async_get(hass)
-    device_registry = dr.async_get(hass)
 
-    registry_devices = dr.async_entries_for_config_entry(
-        device_registry, entry.entry_id
+    entity_id = entity_registry.async_get_entity_id(
+        DOMAIN, PLATFORM, str(entry.unique_id)
     )
-    registry_entities = er.async_entries_for_config_entry(
-        entity_registry, entry.entry_id
-    )
-    device = registry_devices.pop()
-    entity = registry_entities.pop()
-    state = hass.states.get(entity.entity_id)
-    attributes: dict[Any, Any] = {}
+    if entity_id:
+        state = hass.states.get(entity_id)
     if state:
         attributes = state.attributes
-
     return {
-        "entry": {
-            "title": entry.title,
-            "data": async_redact_data(dict(entry.data), TO_REDACT),
-            "sw_version": device.sw_version,
-            "attributes": async_redact_data(attributes, TO_REDACT),
-        },
+        "entry": async_redact_data(entry.as_dict(), TO_REDACT),
+        "device_info": async_redact_data(
+            hass.data[PLATFORM][entry.entry_id][DATA_DEVICE_INFO], TO_REDACT
+        ),
+        "attributes": async_redact_data(attributes, TO_REDACT),
     }

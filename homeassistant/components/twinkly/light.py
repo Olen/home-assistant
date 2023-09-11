@@ -30,7 +30,7 @@ from .const import (
     ATTR_VERSION,
     CONF_HOST,
     CONF_ID,
-    ONF_NAME,
+    CONF_NAME,
     DATA_CLIENT,
     DATA_DEVICE_INFO,
     DEV_LED_PROFILE,
