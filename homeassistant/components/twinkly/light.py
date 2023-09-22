@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Mapping
 import logging
 from typing import Any
 
@@ -24,8 +25,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 
 from .const import (
+    ATTR_LAST_MODE,
+    ATTR_VERSION,
     CONF_HOST,
     CONF_ID,
     CONF_NAME,
@@ -59,7 +63,7 @@ async def async_setup_entry(
     async_add_entities([entity], update_before_add=True)
 
 
-class TwinklyLight(LightEntity):
+class TwinklyLight(LightEntity, RestoreEntity):
     """Implementation of the light for the Twinkly service."""
 
     _attr_icon = "mdi:string-lights"
@@ -103,6 +107,7 @@ class TwinklyLight(LightEntity):
         self._software_version = software_version
         # We guess that most devices are "new" and support effects
         self._attr_supported_features = LightEntityFeature.EFFECT
+        self._attr_last_mode: str | None = None
 
     @property
     def name(self) -> str:
@@ -121,6 +126,11 @@ class TwinklyLight(LightEntity):
         )
 
     @property
+    def extra_state_attributes(self) -> Mapping[str, Any]:
+        """Return entity specific state attributes."""
+        return {ATTR_LAST_MODE: self._attr_last_mode}
+
+    @property
     def effect(self) -> str | None:
         """Return the current effect."""
         if "name" in self._current_movie:
@@ -137,7 +147,15 @@ class TwinklyLight(LightEntity):
 
     async def async_added_to_hass(self) -> None:
         """Device is added to hass."""
-        if self._software_version:
+        await super().async_added_to_hass()
+        state = await self.async_get_last_state()
+        if state:
+            self._client.default_mode = state.attributes.get(ATTR_LAST_MODE)
+
+        software_version = await self._client.get_firmware_version()
+        if ATTR_VERSION in software_version:
+            self._software_version = software_version[ATTR_VERSION]
+
             if AwesomeVersion(self._software_version) < AwesomeVersion(
                 MIN_EFFECT_VERSION
             ):
@@ -201,10 +219,12 @@ class TwinklyLight(LightEntity):
                 await self._client.set_static_colour(kwargs[ATTR_RGB_COLOR])
                 await self._client.set_mode("color")
                 self._client.default_mode = "color"
+                self._attr_last_mode = "color"
             else:
                 await self._client.set_cycle_colours(kwargs[ATTR_RGB_COLOR])
                 await self._client.set_mode("movie")
                 self._client.default_mode = "movie"
+                self._attr_last_mode = "movie"
 
             self._attr_rgb_color = kwargs[ATTR_RGB_COLOR]
 
@@ -220,6 +240,7 @@ class TwinklyLight(LightEntity):
                 await self._client.set_current_movie(int(movie_id))
                 await self._client.set_mode("movie")
                 self._client.default_mode = "movie"
+                self._attr_last_mode = "movie"
         if not self._attr_is_on:
             await self._client.turn_on()
 

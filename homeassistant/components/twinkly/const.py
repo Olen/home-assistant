@@ -9,6 +9,7 @@ CONF_NAME = "name"
 
 # Strongly named HA attributes keys
 ATTR_HOST = "host"
+ATTR_LAST_MODE = "last_mode"
 ATTR_VERSION = "version"
 
 # Keys of attributes read from the get_device_info
