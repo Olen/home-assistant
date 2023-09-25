@@ -151,6 +151,7 @@ class TwinklyLight(LightEntity, RestoreEntity):
         state = await self.async_get_last_state()
         if state:
             self._client.default_mode = state.attributes.get(ATTR_LAST_MODE)
+        self._attr_last_mode = self._client.default_mode
 
         software_version = await self._client.get_firmware_version()
         if ATTR_VERSION in software_version:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from homeassistant import core as ha
 from homeassistant.components.light import ATTR_BRIGHTNESS, LightEntityFeature
 from homeassistant.components.twinkly.const import (
     CONF_HOST,
@@ -11,14 +12,14 @@ from homeassistant.components.twinkly.const import (
     DOMAIN as TWINKLY_DOMAIN,
 )
 from homeassistant.const import CONF_MODEL
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.entity_registry import RegistryEntry
 
 from . import TEST_MODEL, TEST_NAME, TEST_NAME_ORIGINAL, ClientMock
 
-from tests.common import MockConfigEntry
+from tests.common import MockConfigEntry, mock_restore_cache_with_extra_data
 
 
 async def test_initial_state(hass: HomeAssistant) -> None:
@@ -315,6 +316,68 @@ async def test_unload(hass: HomeAssistant) -> None:
     entry_id = client.id
 
     assert await hass.config_entries.async_unload(entry_id)
+
+
+async def test_restore_entity(hass: HomeAssistant) -> None:
+    """Test restored state."""
+    hass.state = CoreState.not_running
+    last_reset = "2023-09-22T00:00:00.000000+00:00"
+    entity_id_color = "light.twinkly_color_device"
+    entity_id_movie = "light.twinkly_movie_device"
+    fake_state_color = ha.State(
+        entity_id_color,
+        state="off",
+        attributes={"last_mode": "color"},
+    )
+    fake_state_movie = ha.State(
+        entity_id_movie,
+        state="on",
+        attributes={"last_mode": "movie"},
+    )
+
+    mock_restore_cache_with_extra_data(
+        hass,
+        [
+            (
+                fake_state_color,
+                {
+                    "last_reset": last_reset,
+                },
+            ),
+            (
+                fake_state_movie,
+                {
+                    "last_reset": last_reset,
+                },
+            ),
+        ],
+    )
+
+    client_color = ClientMock()
+    client_color.change_name("Twinkly Color Device")
+    client_color.device_info["led_profile"] = "RGB"
+    client_color.version = "2.7.0"
+
+    client_movie = ClientMock()
+    client_movie.change_name("Twinkly Movie Device")
+    client_movie.device_info["led_profile"] = "RGB"
+    client_movie.version = "2.7.0"
+    client_movie.id = "4c8fccf5-e08a-4173-92d5-49bf479252a3"
+
+    await _create_entries(hass, client_color)
+    await _create_entries(hass, client_movie)
+
+    color_state = hass.states.get(entity_id_color)
+    movie_state = hass.states.get(entity_id_movie)
+
+    assert (
+        color_state.attributes["last_mode"] == fake_state_color.attributes["last_mode"]
+    )
+    assert (
+        movie_state.attributes["last_mode"] == fake_state_movie.attributes["last_mode"]
+    )
+    assert client_color.default_mode == fake_state_color.attributes["last_mode"]
+    assert client_movie.default_mode == fake_state_movie.attributes["last_mode"]
 
 
 async def _create_entries(
