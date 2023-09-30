@@ -8,7 +8,7 @@
       ]),
       'friendly_name': 'twinkly_test_device_name',
       'icon': 'mdi:string-lights',
-      'last_mode': None,
+      'last_mode': 'movie',
       'supported_color_modes': list([
         'brightness',
       ]),
